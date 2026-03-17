@@ -8,17 +8,62 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppProvider } from "@/context/AppContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Colors from "@/constants/colors";
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient();
 const C = Colors.dark;
+
+function injectWebFonts() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("linkdrop-fonts")) return;
+
+  const link = document.createElement("link");
+  link.id = "linkdrop-fonts-cdn";
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
+  document.head.appendChild(link);
+
+  const style = document.createElement("style");
+  style.id = "linkdrop-fonts";
+  style.textContent = `
+    @font-face {
+      font-family: 'Inter_400Regular';
+      src: local('Inter Regular'), local('Inter'), local('Inter-Regular');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Inter_500Medium';
+      src: local('Inter Medium'), local('Inter'), local('Inter-Medium');
+      font-weight: 500;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Inter_600SemiBold';
+      src: local('Inter SemiBold'), local('Inter'), local('Inter-SemiBold');
+      font-weight: 600;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Inter_700Bold';
+      src: local('Inter Bold'), local('Inter'), local('Inter-Bold');
+      font-weight: 700;
+      font-style: normal;
+    }
+    * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body { background-color: #0A0A0F; }
+  `;
+  document.head.appendChild(style);
+}
 
 function RootLayoutNav() {
   return (
@@ -34,7 +79,7 @@ function RootLayoutNav() {
   );
 }
 
-export default function RootLayout() {
+function NativeLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -44,19 +89,37 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [fontsLoaded, fontError]);
 
   if (!fontsLoaded && !fontError) return null;
 
+  return <RootLayoutNav />;
+}
+
+function WebLayout() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    injectWebFonts();
+    SplashScreen.hideAsync().catch(() => {});
+    const t = setTimeout(() => setReady(true), 50);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!ready) return null;
+  return <RootLayoutNav />;
+}
+
+export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AppProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
-              <RootLayoutNav />
+              {Platform.OS === "web" ? <WebLayout /> : <NativeLayout />}
             </GestureHandlerRootView>
           </AppProvider>
         </QueryClientProvider>
