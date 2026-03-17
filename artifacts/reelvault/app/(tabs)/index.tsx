@@ -1,7 +1,9 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Sharing from "expo-sharing";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
@@ -9,11 +11,9 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import Animated, {
@@ -27,13 +27,55 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AdBanner } from "@/components/AdBanner";
 import { PremiumModal } from "@/components/PremiumModal";
 import { QualityRow } from "@/components/QualityRow";
-import { SkeletonLoader, VideoInfoSkeleton } from "@/components/SkeletonLoader";
+import { VideoInfoSkeleton } from "@/components/SkeletonLoader";
 import { VideoCard } from "@/components/VideoCard";
 import Colors from "@/constants/colors";
 import { useApp, type VideoInfo, type VideoQuality } from "@/context/AppContext";
 import { useVideoApi } from "@/hooks/useVideoApi";
 
 const C = Colors.dark;
+
+function generateCaptions(title: string, platform: string): string {
+  const lines = [
+    `🎬 ${title}`,
+    ``,
+    `Watch this amazing video from ${platform}! Don't forget to like and share.`,
+    ``,
+    `📌 Key Highlights:`,
+    `• Engaging content you won't want to miss`,
+    `• Perfect for sharing with friends & family`,
+    `• Downloaded with ReelVault ⚡`,
+  ];
+  return lines.join("\n");
+}
+
+function generateHashtags(title: string, platform: string): string {
+  const words = title
+    .replace(/[^a-zA-Z0-9 ]/g, " ")
+    .split(" ")
+    .filter((w) => w.length > 3)
+    .slice(0, 5)
+    .map((w) => `#${w.charAt(0).toUpperCase()}${w.slice(1).toLowerCase()}`);
+
+  const platformTags: Record<string, string[]> = {
+    YouTube: ["#YouTube", "#YouTubeVideo", "#VideoOfTheDay"],
+    Instagram: ["#Instagram", "#Reels", "#InstagramReels"],
+    TikTok: ["#TikTok", "#TikTokVideo", "#ForYou", "#FYP"],
+    Facebook: ["#Facebook", "#FacebookVideo"],
+    "X/Twitter": ["#Twitter", "#Trending"],
+    Vimeo: ["#Vimeo", "#VideoArt"],
+  };
+
+  const platTags = platformTags[platform] ?? ["#Video", "#Trending"];
+  const allTags = [
+    ...words,
+    ...platTags,
+    "#ReelVault",
+    "#VideoDownloader",
+    "#MustWatch",
+  ];
+  return [...new Set(allTags)].join(" ");
+}
 
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
@@ -43,7 +85,12 @@ export default function DownloadScreen() {
   const [url, setUrl] = useState("");
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
-  const [showPlayer, setShowPlayer] = useState(false);
+  const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
+  const [downloadingForShare, setDownloadingForShare] = useState(false);
+  const [captionText, setCaptionText] = useState<string | null>(null);
+  const [hashtagText, setHashtagText] = useState<string | null>(null);
+  const [showCaptions, setShowCaptions] = useState(false);
+  const [showHashtags, setShowHashtags] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const inputBorderAnim = useSharedValue(0);
@@ -52,17 +99,15 @@ export default function DownloadScreen() {
     borderColor: `rgba(59, 130, 246, ${inputBorderAnim.value})`,
   }));
 
-  const handleFocus = () => {
-    inputBorderAnim.value = withSpring(1);
-  };
-
-  const handleBlur = () => {
-    inputBorderAnim.value = withSpring(0);
-  };
+  const handleFocus = () => { inputBorderAnim.value = withSpring(1); };
+  const handleBlur = () => { inputBorderAnim.value = withSpring(0); };
 
   const handlePaste = async () => {
     const text = await Clipboard.getStringAsync();
-    if (text) setUrl(text);
+    if (text) {
+      setUrl(text);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   };
 
   const handleFetch = useCallback(async () => {
@@ -70,11 +115,15 @@ export default function DownloadScreen() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     clearError();
     setVideoInfo(null);
-    setShowPlayer(false);
+    setDownloadedUri(null);
+    setCaptionText(null);
+    setHashtagText(null);
+    setShowCaptions(false);
+    setShowHashtags(false);
     const info = await fetchVideoInfo(url.trim());
     if (info) {
       setVideoInfo(info);
-      setTimeout(() => scrollRef.current?.scrollTo({ y: 200, animated: true }), 300);
+      setTimeout(() => scrollRef.current?.scrollTo({ y: 220, animated: true }), 300);
     }
   }, [url, fetchVideoInfo, clearError]);
 
@@ -91,7 +140,8 @@ export default function DownloadScreen() {
 
     const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
     const ext = quality.isAudioOnly ? "mp3" : "mp4";
-    const filename = `${videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_")}_${quality.quality}.${ext}`;
+    const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 60);
+    const filename = `${safeTitle}_${quality.quality}.${ext}`;
 
     await addToHistory({
       title: videoInfo.title,
@@ -111,23 +161,113 @@ export default function DownloadScreen() {
       a.click();
       document.body.removeChild(a);
     } else {
-      await Linking.openURL(streamUrl);
+      try {
+        const localUri = FileSystem.cacheDirectory + filename;
+        const dl = FileSystem.createDownloadResumable(streamUrl, localUri, {});
+        const result = await dl.downloadAsync();
+        if (result?.uri) {
+          setDownloadedUri(result.uri);
+          Alert.alert(
+            "Download Complete!",
+            `"${videoInfo.title}" save ho gaya.\n\nShare karne ke liye Share button dabao.`,
+            [{ text: "OK" }]
+          );
+        }
+      } catch {
+        await Linking.openURL(streamUrl);
+      }
     }
   };
 
   const handleShare = async () => {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await Share.share({ message: videoInfo.originalUrl, url: videoInfo.originalUrl });
-    } catch {}
+
+    if (Platform.OS === "web") {
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: videoInfo.title, url: videoInfo.originalUrl });
+          return;
+        } catch {}
+      }
+      await Clipboard.setStringAsync(videoInfo.originalUrl);
+      Alert.alert("Link Copy Ho Gaya!", "Video link clipboard mein copy ho gaya.");
+      return;
+    }
+
+    if (downloadedUri) {
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(downloadedUri, {
+          mimeType: downloadedUri.endsWith(".mp3") ? "audio/mpeg" : "video/mp4",
+          dialogTitle: videoInfo.title,
+        });
+      }
+    } else {
+      Alert.alert(
+        "Video Download Nahi Hai",
+        "Share karne ke liye pehle video download karo.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Download Karo",
+            onPress: async () => {
+              if (!videoInfo.qualities.length) return;
+              const best = videoInfo.qualities.find((q) => !["720p","1080p","2160p"].includes(q.quality) && !q.isAudioOnly)
+                ?? videoInfo.qualities[0];
+              await handleDownload(best);
+            },
+          },
+        ]
+      );
+    }
   };
 
-  const handleCopyLink = async () => {
+  const handleCaption = () => {
     if (!videoInfo) return;
-    await Clipboard.setStringAsync(videoInfo.originalUrl);
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert("Copied!", "Video link copied to clipboard.");
+    const caption = generateCaptions(videoInfo.title, videoInfo.platform);
+    setCaptionText(caption);
+    setShowCaptions(true);
+    setShowHashtags(false);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
+  };
+
+  const handleHashtags = () => {
+    if (!videoInfo) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const tags = generateHashtags(videoInfo.title, videoInfo.platform);
+    setHashtagText(tags);
+    setShowHashtags(true);
+    setShowCaptions(false);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
+  };
+
+  const handleCopyCaption = async () => {
+    if (!captionText) return;
+    await Clipboard.setStringAsync(captionText);
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Copied!", "Caption clipboard mein copy ho gaya.");
+  };
+
+  const handleCopyHashtags = async () => {
+    if (!hashtagText) return;
+    await Clipboard.setStringAsync(hashtagText);
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Copied!", "Hashtags clipboard mein copy ho gaye.");
+  };
+
+  const handleTrim = () => {
+    if (!videoInfo) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      "Video Trim",
+      "Video trim karne ke liye browser mein open hoga.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Open", onPress: () => Linking.openURL(`https://clideo.com/cut-video`) },
+      ]
+    );
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -164,11 +304,7 @@ export default function DownloadScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          {
-            paddingBottom: Platform.OS === "web"
-              ? 34 + 84
-              : insets.bottom + 90,
-          },
+          { paddingBottom: Platform.OS === "web" ? 34 + 84 : insets.bottom + 90 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -180,7 +316,7 @@ export default function DownloadScreen() {
               style={styles.input}
               value={url}
               onChangeText={setUrl}
-              placeholder="Paste video URL here..."
+              placeholder="Video URL yahan paste karo..."
               placeholderTextColor={C.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -204,23 +340,26 @@ export default function DownloadScreen() {
               <Text style={styles.pasteBtnText}>Paste</Text>
             </Pressable>
             <Pressable
-              style={[styles.fetchBtn, !url.trim() && styles.fetchBtnDisabled]}
+              style={[styles.fetchBtn, (!url.trim() || isLoadingInfo) && styles.fetchBtnDisabled]}
               onPress={handleFetch}
               disabled={!url.trim() || isLoadingInfo}
             >
               {isLoadingInfo ? (
-                <Feather name="loader" size={16} color="#000" />
+                <>
+                  <Feather name="loader" size={16} color="#fff" />
+                  <Text style={styles.fetchBtnText}>Loading...</Text>
+                </>
               ) : (
                 <>
-                  <Feather name="search" size={16} color="#000" />
-                  <Text style={styles.fetchBtnText}>Fetch</Text>
+                  <Feather name="download-cloud" size={16} color="#fff" />
+                  <Text style={styles.fetchBtnText}>Download</Text>
                 </>
               )}
             </Pressable>
           </View>
         </View>
 
-        {error && error !== "PREMIUM_REQUIRED" ? (
+        {error ? (
           <Animated.View entering={FadeIn} style={styles.errorBox}>
             <Feather name="alert-circle" size={16} color={C.error} />
             <Text style={styles.errorText}>{error}</Text>
@@ -239,51 +378,104 @@ export default function DownloadScreen() {
 
             <View style={styles.actionRow}>
               <Pressable style={styles.actionBtn} onPress={handleShare}>
-                <Feather name="share-2" size={16} color={C.accent} />
-                <Text style={styles.actionBtnText}>Share</Text>
+                <Feather name="share-2" size={16} color={downloadedUri ? C.success : C.accent} />
+                <Text style={[styles.actionBtnText, downloadedUri ? { color: C.success } : {}]}>
+                  {downloadedUri ? "Share Video" : "Share"}
+                </Text>
               </Pressable>
-              <Pressable style={styles.actionBtn} onPress={handleCopyLink}>
+              <Pressable
+                style={styles.actionBtn}
+                onPress={async () => {
+                  await Clipboard.setStringAsync(videoInfo.originalUrl);
+                  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  Alert.alert("Copied!", "Link copy ho gaya.");
+                }}
+              >
                 <Feather name="copy" size={16} color={C.accent} />
                 <Text style={styles.actionBtnText}>Copy Link</Text>
               </Pressable>
-              <Pressable style={styles.actionBtn} onPress={() => setShowPlayer(!showPlayer)}>
-                <Feather name="play-circle" size={16} color={C.accent} />
-                <Text style={styles.actionBtnText}>Preview</Text>
+              <Pressable
+                style={styles.actionBtn}
+                onPress={() => Linking.openURL(videoInfo.originalUrl)}
+              >
+                <Feather name="external-link" size={16} color={C.accent} />
+                <Text style={styles.actionBtnText}>Open</Text>
               </Pressable>
             </View>
 
-            {showPlayer && videoInfo.thumbnail ? (
-              <Animated.View entering={FadeInDown} style={styles.playerNote}>
-                <Feather name="info" size={14} color={C.textSecondary} />
-                <Text style={styles.playerNoteText}>
-                  Video preview opens in browser for security reasons.
-                </Text>
-                <Pressable onPress={() => Linking.openURL(videoInfo.originalUrl)}>
-                  <Text style={[styles.playerNoteText, { color: C.accent }]}>Open</Text>
+            {downloadedUri ? (
+              <Animated.View entering={FadeIn} style={styles.downloadedBanner}>
+                <Feather name="check-circle" size={16} color={C.success} />
+                <Text style={styles.downloadedBannerText}>Video download ho gaya!</Text>
+                <Pressable onPress={handleShare} style={styles.shareNowBtn}>
+                  <Text style={styles.shareNowText}>Share</Text>
                 </Pressable>
               </Animated.View>
             ) : null}
 
-            <View style={styles.aiSection}>
-              <Text style={styles.sectionLabel}>AI Features</Text>
-              <View style={styles.aiRow}>
-                <Pressable style={styles.aiBtn} onPress={() => Alert.alert("Captions", "🎙 Auto-detecting speech...\n\n[Demo] This is a placeholder caption generated by AI for the video.")}>
-                  <Feather name="message-square" size={15} color={C.accent} />
-                  <Text style={styles.aiBtnText}>Caption</Text>
+            <View style={styles.toolsSection}>
+              <Text style={styles.sectionLabel}>Tools</Text>
+              <View style={styles.toolsGrid}>
+                <Pressable style={styles.toolCard} onPress={handleCaption}>
+                  <View style={[styles.toolIcon, { backgroundColor: "#0D1A2A" }]}>
+                    <Feather name="message-square" size={18} color={C.accent} />
+                  </View>
+                  <Text style={styles.toolTitle}>Caption</Text>
+                  <Text style={styles.toolDesc}>Auto-generate</Text>
                 </Pressable>
-                <Pressable style={styles.aiBtn} onPress={() => Alert.alert("Hashtags", "#VideoDownload #Trending #Viral #Content #Share #ReelVault #MustWatch")}>
-                  <Feather name="hash" size={15} color={C.accent} />
-                  <Text style={styles.aiBtnText}>Hashtags</Text>
+
+                <Pressable style={styles.toolCard} onPress={handleHashtags}>
+                  <View style={[styles.toolIcon, { backgroundColor: "#1A0D2A" }]}>
+                    <Feather name="hash" size={18} color="#A78BFA" />
+                  </View>
+                  <Text style={styles.toolTitle}>Hashtags</Text>
+                  <Text style={styles.toolDesc}>One-click</Text>
                 </Pressable>
-                <Pressable style={styles.aiBtn} onPress={() => Alert.alert("Trim Video", "Video trimming opens in your browser.\n\nStart: 0:00  End: " + (videoInfo.duration ? `${Math.floor((videoInfo.duration || 0) / 60)}:${String(Math.floor((videoInfo.duration || 0) % 60)).padStart(2,'0')}` : "unknown"), [{ text: "Cancel" }, { text: "Open", onPress: () => Linking.openURL(videoInfo.originalUrl) }])}>
-                  <Feather name="scissors" size={15} color={C.accent} />
-                  <Text style={styles.aiBtnText}>Trim</Text>
+
+                <Pressable style={styles.toolCard} onPress={handleTrim}>
+                  <View style={[styles.toolIcon, { backgroundColor: "#1A1A0D" }]}>
+                    <Feather name="scissors" size={18} color={C.gold} />
+                  </View>
+                  <Text style={styles.toolTitle}>Trim</Text>
+                  <Text style={styles.toolDesc}>Cut video</Text>
                 </Pressable>
               </View>
             </View>
 
+            {showCaptions && captionText ? (
+              <Animated.View entering={FadeInDown} style={styles.outputCard}>
+                <View style={styles.outputHeader}>
+                  <View style={styles.outputTitleRow}>
+                    <Feather name="message-square" size={14} color={C.accent} />
+                    <Text style={styles.outputTitle}>Caption</Text>
+                  </View>
+                  <Pressable style={styles.copyBtn} onPress={handleCopyCaption}>
+                    <Feather name="copy" size={14} color={C.accent} />
+                    <Text style={styles.copyBtnText}>Copy</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.outputText}>{captionText}</Text>
+              </Animated.View>
+            ) : null}
+
+            {showHashtags && hashtagText ? (
+              <Animated.View entering={FadeInDown} style={styles.outputCard}>
+                <View style={styles.outputHeader}>
+                  <View style={styles.outputTitleRow}>
+                    <Feather name="hash" size={14} color="#A78BFA" />
+                    <Text style={[styles.outputTitle, { color: "#A78BFA" }]}>Hashtags</Text>
+                  </View>
+                  <Pressable style={[styles.copyBtn, { borderColor: "#A78BFA" }]} onPress={handleCopyHashtags}>
+                    <Feather name="copy" size={14} color="#A78BFA" />
+                    <Text style={[styles.copyBtnText, { color: "#A78BFA" }]}>Copy</Text>
+                  </Pressable>
+                </View>
+                <Text style={[styles.outputText, { color: "#A78BFA", lineHeight: 28 }]}>{hashtagText}</Text>
+              </Animated.View>
+            ) : null}
+
             <View style={styles.qualitiesSection}>
-              <Text style={styles.sectionLabel}>Download Quality</Text>
+              <Text style={styles.sectionLabel}>Quality Choose Karo</Text>
               <View style={styles.qualitiesList}>
                 {videoInfo.qualities.map((q) => (
                   <QualityRow
@@ -308,12 +500,12 @@ export default function DownloadScreen() {
             <View style={styles.emptyIconWrap}>
               <Feather name="download-cloud" size={40} color={C.textMuted} />
             </View>
-            <Text style={styles.emptyTitle}>Paste a video link</Text>
+            <Text style={styles.emptyTitle}>Video URL paste karo</Text>
             <Text style={styles.emptySubtitle}>
-              Supports YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo and more
+              YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo aur bahut aur platforms support hain
             </Text>
             <View style={styles.supportedPlatforms}>
-              {["YT", "IG", "FB", "TT", "TW"].map((p) => (
+              {["YT", "IG", "FB", "TT", "TW", "VM"].map((p) => (
                 <View key={p} style={styles.platformPill}>
                   <Text style={styles.platformPillText}>{p}</Text>
                 </View>
@@ -329,10 +521,7 @@ export default function DownloadScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: C.background,
-  },
+  container: { flex: 1, backgroundColor: C.background },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -341,264 +530,131 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingTop: 8,
   },
-  appName: {
-    color: C.text,
-    fontSize: 26,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: -0.5,
-  },
-  tagline: {
-    color: C.textMuted,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-  },
+  appName: { color: C.text, fontSize: 26, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  tagline: { color: C.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
   premiumBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#2A1A00",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#4A3000",
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "#2A1A00", paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: "#4A3000",
   },
-  premiumBadgeText: {
-    color: C.gold,
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
-  },
+  premiumBadgeText: { color: C.gold, fontSize: 12, fontFamily: "Inter_600SemiBold" },
   goPremiumBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#1A1200",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#3D2A00",
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "#1A1200", paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: "#3D2A00",
   },
-  goPremiumText: {
-    color: C.gold,
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-  },
-  inputSection: {
-    gap: 10,
-    marginBottom: 16,
-  },
+  goPremiumText: { color: C.gold, fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 4 },
+  inputSection: { gap: 10, marginBottom: 16 },
   inputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.surfaceElevated,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    paddingHorizontal: 14,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: C.surfaceElevated, borderRadius: 14,
+    borderWidth: 1.5, paddingHorizontal: 14,
   },
-  inputIcon: {
-    marginRight: 10,
-  },
+  inputIcon: { marginRight: 10 },
   input: {
-    flex: 1,
-    color: C.text,
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    paddingVertical: 14,
+    flex: 1, color: C.text, fontSize: 14,
+    fontFamily: "Inter_400Regular", paddingVertical: 14,
   },
-  clearBtn: {
-    padding: 4,
-  },
-  inputActions: {
-    flexDirection: "row",
-    gap: 10,
-  },
+  clearBtn: { padding: 4 },
+  inputActions: { flexDirection: "row", gap: 10 },
   pasteBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: C.surfaceElevated,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: C.surfaceElevated, paddingHorizontal: 16, paddingVertical: 12,
+    borderRadius: 12, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  pasteBtnText: {
-    color: C.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
-  },
+  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium" },
   fetchBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: C.accent,
-    paddingVertical: 12,
-    borderRadius: 12,
+    flex: 1, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", gap: 8,
+    backgroundColor: C.accent, paddingVertical: 13, borderRadius: 12,
   },
-  fetchBtnDisabled: {
-    opacity: 0.5,
-  },
-  fetchBtnText: {
-    color: "#000",
-    fontSize: 14,
-    fontFamily: "Inter_700Bold",
-  },
+  fetchBtnDisabled: { opacity: 0.45 },
+  fetchBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
   errorBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#1A0000",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#4A0000",
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#1A0000", borderRadius: 10, padding: 12,
+    marginBottom: 16, borderWidth: 1, borderColor: "#4A0000",
   },
-  errorText: {
-    flex: 1,
-    color: C.error,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-  },
-  skeletonWrap: {
-    marginBottom: 16,
-  },
-  resultSection: {
-    gap: 16,
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
+  errorText: { flex: 1, color: C.error, fontSize: 13, fontFamily: "Inter_400Regular" },
+  skeletonWrap: { marginBottom: 16 },
+  resultSection: { gap: 16 },
+  actionRow: { flexDirection: "row", gap: 10 },
   actionBtn: {
-    flex: 1,
-    flexDirection: "row",
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: C.surfaceElevated, paddingVertical: 13, borderRadius: 12,
+    borderWidth: 1, borderColor: C.surfaceBorder,
+  },
+  actionBtnText: { color: C.accent, fontSize: 13, fontFamily: "Inter_500Medium" },
+  downloadedBanner: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#0D2A1A", borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: "#1A4A2A",
+  },
+  downloadedBannerText: { flex: 1, color: C.success, fontSize: 13, fontFamily: "Inter_500Medium" },
+  shareNowBtn: {
+    backgroundColor: C.success, paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 8,
+  },
+  shareNowText: { color: "#000", fontSize: 12, fontFamily: "Inter_700Bold" },
+  toolsSection: { gap: 10 },
+  toolsGrid: { flexDirection: "row", gap: 10 },
+  toolCard: {
+    flex: 1, backgroundColor: C.surfaceElevated, borderRadius: 14,
+    padding: 14, gap: 8, borderWidth: 1, borderColor: C.surfaceBorder,
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: C.surfaceElevated,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
   },
-  actionBtnText: {
-    color: C.accent,
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
+  toolIcon: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: "center", justifyContent: "center",
   },
-  playerNote: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: C.surfaceElevated,
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
+  toolTitle: { color: C.text, fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  toolDesc: { color: C.textMuted, fontSize: 11, fontFamily: "Inter_400Regular" },
+  outputCard: {
+    backgroundColor: C.surfaceElevated, borderRadius: 14,
+    padding: 16, gap: 12, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  playerNoteText: {
-    flex: 1,
-    color: C.textSecondary,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
+  outputHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  outputTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  outputTitle: { color: C.accent, fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  copyBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "#0D1A2A", paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 8, borderWidth: 1, borderColor: C.accent,
   },
-  aiSection: {
-    gap: 10,
-  },
-  aiRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  aiBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: C.surfaceElevated,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
-  },
-  aiBtnText: {
-    color: C.text,
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
+  copyBtnText: { color: C.accent, fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  outputText: {
+    color: C.textSecondary, fontSize: 14,
+    fontFamily: "Inter_400Regular", lineHeight: 22,
   },
   sectionLabel: {
-    color: C.textSecondary,
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
+    color: C.textSecondary, fontSize: 12, fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.8, textTransform: "uppercase",
   },
-  qualitiesSection: {
-    gap: 10,
-  },
-  qualitiesList: {
-    gap: 8,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingTop: 60,
-    gap: 12,
-  },
+  qualitiesSection: { gap: 10 },
+  qualitiesList: { gap: 8 },
+  emptyState: { alignItems: "center", paddingTop: 60, gap: 12 },
   emptyIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: C.surfaceElevated,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
+    width: 80, height: 80, borderRadius: 20,
+    backgroundColor: C.surfaceElevated, alignItems: "center", justifyContent: "center",
+    marginBottom: 4, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  emptyTitle: {
-    color: C.text,
-    fontSize: 18,
-    fontFamily: "Inter_600SemiBold",
-  },
+  emptyTitle: { color: C.text, fontSize: 18, fontFamily: "Inter_600SemiBold" },
   emptySubtitle: {
-    color: C.textSecondary,
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-    lineHeight: 22,
-    maxWidth: 260,
+    color: C.textSecondary, fontSize: 14, fontFamily: "Inter_400Regular",
+    textAlign: "center", lineHeight: 22, maxWidth: 280,
   },
   supportedPlatforms: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 8,
-    flexWrap: "wrap",
-    justifyContent: "center",
+    flexDirection: "row", gap: 8, marginTop: 8,
+    flexWrap: "wrap", justifyContent: "center",
   },
   platformPill: {
-    backgroundColor: C.surfaceElevated,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
+    backgroundColor: C.surfaceElevated, paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
   platformPillText: {
-    color: C.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.5,
+    color: C.textSecondary, fontSize: 11,
+    fontFamily: "Inter_600SemiBold", letterSpacing: 0.5,
   },
 });
