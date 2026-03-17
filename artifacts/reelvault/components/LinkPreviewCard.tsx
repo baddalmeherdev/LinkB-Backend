@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from "react-native-reanimated";
 import Colors from "@/constants/colors";
 import { PlatformIcon } from "@/components/PlatformIcon";
@@ -20,6 +20,7 @@ export type PreviewData = {
 type Props = {
   preview: PreviewData | null;
   isLoading: boolean;
+  onPlay?: () => void;
 };
 
 function formatDuration(seconds: number | null): string {
@@ -44,7 +45,7 @@ function SkeletonBox({ width, height, style }: { width: number | string; height:
   );
 }
 
-export function LinkPreviewCard({ preview, isLoading }: Props) {
+export function LinkPreviewCard({ preview, isLoading, onPlay }: Props) {
   if (isLoading && !preview) {
     return (
       <Animated.View entering={FadeIn} style={styles.card}>
@@ -69,7 +70,7 @@ export function LinkPreviewCard({ preview, isLoading }: Props) {
 
   return (
     <Animated.View entering={FadeIn} style={styles.card}>
-      <View style={styles.thumbContainer}>
+      <Pressable style={styles.thumbContainer} onPress={onPlay} disabled={!onPlay}>
         {preview.thumbnail ? (
           <Image source={{ uri: preview.thumbnail }} style={styles.thumb} contentFit="cover" />
         ) : (
@@ -78,15 +79,23 @@ export function LinkPreviewCard({ preview, isLoading }: Props) {
           </View>
         )}
         <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.6)"]}
+          colors={["transparent", "rgba(0,0,0,0.7)"]}
           style={styles.thumbGradient}
         />
+
+        {onPlay ? (
+          <View style={styles.playBtn}>
+            <Feather name="play" size={28} color="#fff" />
+          </View>
+        ) : null}
+
         {duration ? (
           <View style={styles.durationBadge}>
             <Feather name="clock" size={10} color="#fff" />
             <Text style={styles.durationText}>{duration}</Text>
           </View>
         ) : null}
+
         {isLoading && (
           <View style={styles.refreshOverlay}>
             <ActivityIndicator color={C.accent} size="small" />
@@ -96,7 +105,7 @@ export function LinkPreviewCard({ preview, isLoading }: Props) {
           <Feather name="eye" size={10} color={C.accent} />
           <Text style={styles.previewLabelText}>Preview</Text>
         </View>
-      </View>
+      </Pressable>
 
       <View style={styles.info}>
         <View style={styles.platformRow}>
@@ -114,10 +123,19 @@ export function LinkPreviewCard({ preview, isLoading }: Props) {
         <Text style={styles.title} numberOfLines={3}>
           {preview.title}
         </Text>
-        <View style={styles.readyRow}>
-          <View style={styles.readyDot} />
-          <Text style={styles.readyText}>Ready to download</Text>
-        </View>
+        {onPlay ? (
+          <Pressable style={styles.playTextRow} onPress={onPlay}>
+            <View style={styles.playTextIcon}>
+              <Feather name="play" size={10} color="#fff" />
+            </View>
+            <Text style={styles.playTextLabel}>Tap thumbnail to watch</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.readyRow}>
+            <View style={styles.readyDot} />
+            <Text style={styles.readyText}>Ready to download</Text>
+          </View>
+        )}
       </View>
     </Animated.View>
   );
@@ -148,7 +166,22 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 60,
+    height: 80,
+  },
+  playBtn: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginTop: -28,
+    marginLeft: -28,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   durationBadge: {
     position: "absolute",
@@ -238,6 +271,25 @@ const styles = StyleSheet.create({
   },
   readyText: {
     color: C.success,
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+  },
+  playTextRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  playTextIcon: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: C.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playTextLabel: {
+    color: C.accent,
     fontSize: 11,
     fontFamily: "Inter_500Medium",
   },

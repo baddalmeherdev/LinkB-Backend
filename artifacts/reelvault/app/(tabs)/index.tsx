@@ -95,6 +95,8 @@ export default function DownloadScreen() {
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
   const [downloadingForShare, setDownloadingForShare] = useState(false);
+  const [lastDownloadedQuality, setLastDownloadedQuality] = useState<VideoQuality | null>(null);
+  const webBlobRef = React.useRef<{ blob: Blob; filename: string } | null>(null);
   const [captionText, setCaptionText] = useState<string | null>(null);
   const [hashtagText, setHashtagText] = useState<string | null>(null);
   const [showCaptions, setShowCaptions] = useState(false);
@@ -115,6 +117,8 @@ export default function DownloadScreen() {
     setPreviewData(null);
     setVideoInfo(null);
     setDownloadedUri(null);
+    setLastDownloadedQuality(null);
+    webBlobRef.current = null;
     setCaptionText(null);
     setHashtagText(null);
     setShowCaptions(false);
@@ -212,14 +216,26 @@ export default function DownloadScreen() {
       filename,
     });
 
+    setLastDownloadedQuality(quality);
+
     if (Platform.OS === "web") {
-      const a = document.createElement("a");
-      a.href = streamUrl;
-      a.download = filename;
-      a.target = "_blank";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      try {
+        const response = await fetch(streamUrl);
+        if (!response.ok) throw new Error("Download failed");
+        const blob = await response.blob();
+        webBlobRef.current = { blob, filename };
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        setDownloadedUri(blobUrl);
+      } catch {
+        Alert.alert("Download Failed", "Could not download the video. Please try again.");
+      }
     } else {
       try {
         const localUri = FileSystem.cacheDirectory + filename;
@@ -244,14 +260,65 @@ export default function DownloadScreen() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     if (Platform.OS === "web") {
-      if (navigator.share) {
-        try {
-          await navigator.share({ title: videoInfo.title, url: videoInfo.originalUrl });
-          return;
-        } catch {}
+      const cached = webBlobRef.current;
+      if (cached) {
+        const file = new File([cached.blob], cached.filename, { type: cached.blob.type });
+        const canShareFile = (navigator as { canShare?: (d: object) => boolean }).canShare?.({ files: [file] });
+        if (canShareFile && navigator.share) {
+          try {
+            await navigator.share({ title: videoInfo.title, files: [file] });
+            return;
+          } catch {}
+        }
+        const blobUrl = URL.createObjectURL(cached.blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = cached.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        Alert.alert("Video Saved!", "Your video has been saved to the Downloads folder.");
+        return;
       }
-      await Clipboard.setStringAsync(videoInfo.originalUrl);
-      Alert.alert("Link Copied!", "Video link copied to clipboard.");
+
+      const quality = lastDownloadedQuality ?? videoInfo.qualities.find(
+        (q) => !["720p", "1080p", "2160p"].includes(q.quality) && !q.isAudioOnly
+      ) ?? videoInfo.qualities[0];
+
+      if (!quality) return;
+
+      const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+      const ext = quality.isAudioOnly ? "mp3" : "mp4";
+      const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 60);
+      const filename = `${safeTitle}_${quality.quality}.${ext}`;
+
+      setDownloadingForShare(true);
+      try {
+        const response = await fetch(streamUrl);
+        if (!response.ok) throw new Error("Failed");
+        const blob = await response.blob();
+        webBlobRef.current = { blob, filename };
+        const file = new File([blob], filename, { type: blob.type });
+        const canShareFile = (navigator as { canShare?: (d: object) => boolean }).canShare?.({ files: [file] });
+        if (canShareFile && navigator.share) {
+          await navigator.share({ title: videoInfo.title, files: [file] });
+        } else {
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = blobUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          Alert.alert("Video Saved!", "Your video has been saved to the Downloads folder.");
+        }
+      } catch {
+        Alert.alert("Share Failed", "Could not share the video. Please try downloading first.");
+      } finally {
+        setDownloadingForShare(false);
+      }
       return;
     }
 
@@ -438,7 +505,11 @@ export default function DownloadScreen() {
 
         {previewData && !videoInfo && !isLoadingInfo ? (
           <Animated.View entering={FadeInDown} style={styles.previewSection}>
-            <LinkPreviewCard preview={previewData} isLoading={isLoadingPreview} />
+            <LinkPreviewCard
+              preview={previewData}
+              isLoading={isLoadingPreview}
+              onPlay={() => Linking.openURL(url.trim())}
+            />
 
             <Pressable
               style={styles.getFormatsBtn}
@@ -463,10 +534,18 @@ export default function DownloadScreen() {
             <VideoCard info={videoInfo} />
 
             <View style={styles.actionRow}>
-              <Pressable style={styles.actionBtn} onPress={handleShare}>
-                <Feather name="share-2" size={16} color={downloadedUri ? C.success : C.accent} />
+              <Pressable
+                style={[styles.actionBtn, downloadingForShare && styles.fetchBtnDisabled]}
+                onPress={handleShare}
+                disabled={downloadingForShare}
+              >
+                <Feather
+                  name="share-2"
+                  size={16}
+                  color={downloadedUri ? C.success : C.accent}
+                />
                 <Text style={[styles.actionBtnText, downloadedUri ? { color: C.success } : {}]}>
-                  {downloadedUri ? "Share Video" : "Share"}
+                  {downloadingForShare ? "Preparing..." : downloadedUri ? "Share Video" : "Share"}
                 </Text>
               </Pressable>
               <Pressable
