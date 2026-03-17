@@ -1,12 +1,14 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 const router: IRouter = Router();
 
+const YTDLP = "/home/runner/.local/bin/yt-dlp";
+
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const RATE_LIMIT = 10;
+const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60 * 1000;
 
 function checkRateLimit(ip: string): boolean {
@@ -65,13 +67,13 @@ router.post("/info", async (req: Request, res: Response) => {
   }
 
   try {
-    const ytdlpPath = "yt-dlp";
-    const { stdout } = await execFileAsync(ytdlpPath, [
+    const { stdout } = await execFileAsync(YTDLP, [
       "--dump-json",
       "--no-playlist",
       "--no-warnings",
+      "--compat-options", "no-youtube-unavailable-videos",
       url,
-    ], { timeout: 30000 });
+    ], { timeout: 45000 });
 
     const info = JSON.parse(stdout) as Record<string, unknown>;
     const formats = (info.formats as Record<string, unknown>[]) ?? [];
@@ -97,7 +99,7 @@ router.post("/info", async (req: Request, res: Response) => {
         formatId: String(bestAudio.format_id),
         quality: "Audio Only",
         resolution: "audio",
-        ext: String(bestAudio.ext ?? "m4a"),
+        ext: "mp3",
         filesize: (bestAudio.filesize as number | null) ?? null,
         isAudioOnly: true,
       });
@@ -133,12 +135,23 @@ router.post("/info", async (req: Request, res: Response) => {
             formatId: String(closest.format_id),
             quality: `${h}p`,
             resolution: `${closest.width ?? "?"}x${h}`,
-            ext: String(closest.ext ?? "mp4"),
+            ext: "mp4",
             filesize: (closest.filesize as number | null) ?? null,
             isAudioOnly: false,
           });
         }
       }
+    }
+
+    if (qualities.length === 0 && info.url) {
+      qualities.push({
+        formatId: "best",
+        quality: "Best Available",
+        resolution: "auto",
+        ext: "mp4",
+        filesize: null,
+        isAudioOnly: false,
+      });
     }
 
     const sortedQualities = [
@@ -165,82 +178,88 @@ router.post("/info", async (req: Request, res: Response) => {
     console.error("yt-dlp error:", err);
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("not found") || msg.includes("ENOENT")) {
-      res.status(500).json({
-        error: "YT_DLP_MISSING",
-        message: "yt-dlp is not installed on the server.",
-      });
+      res.status(500).json({ error: "YT_DLP_MISSING", message: "yt-dlp is not installed on the server." });
+      return;
+    }
+    if (msg.includes("private") || msg.includes("unavailable") || msg.includes("not available")) {
+      res.status(400).json({ error: "FETCH_FAILED", message: "This video is private or unavailable." });
       return;
     }
     res.status(500).json({
       error: "FETCH_FAILED",
-      message: "Could not fetch video info. The URL may not be supported or the video may be private.",
+      message: "Could not fetch video info. Try a different URL.",
     });
   }
 });
 
-router.post("/download", async (req: Request, res: Response) => {
-  const ip = getClientIp(req);
-  if (!checkRateLimit(ip)) {
-    res.status(429).json({ error: "RATE_LIMIT", message: "Too many requests. Please wait a minute." });
-    return;
-  }
-
-  const { url, formatId, isPremium } = req.body as {
+router.get("/stream", async (req: Request, res: Response) => {
+  const { url, formatId, isPremium, title } = req.query as {
     url?: string;
     formatId?: string;
-    isPremium?: boolean;
+    isPremium?: string;
+    title?: string;
   };
 
   if (!url || !formatId) {
-    res.status(400).json({ error: "INVALID_REQUEST", message: "URL and formatId are required" });
+    res.status(400).json({ error: "INVALID_REQUEST", message: "url and formatId are required" });
     return;
   }
   if (!validateUrl(url)) {
-    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid URL" });
+    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL" });
     return;
   }
 
-  const isHD = ["720", "1080", "2160"].some((q) => formatId.includes(q));
-  if (isHD && !isPremium) {
-    res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require a Premium account" });
+  const premiumUser = isPremium === "true";
+  const isHdFormat = ["720", "1080", "2160"].some((q) => formatId.includes(q));
+  if (isHdFormat && !premiumUser) {
+    res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require Premium" });
     return;
   }
 
-  try {
-    const { stdout } = await execFileAsync("yt-dlp", [
-      "--dump-json",
-      "--no-playlist",
-      "--no-warnings",
-      "-f", formatId,
-      url,
-    ], { timeout: 30000 });
+  const isAudioOnly = formatId === "bestaudio" || formatId.startsWith("audio");
+  const ext = isAudioOnly ? "mp3" : "mp4";
+  const safeTitle = (title ?? "video").replace(/[^a-zA-Z0-9_\- ]/g, "_").substring(0, 80);
+  const filename = `${safeTitle}.${ext}`;
 
-    const info = JSON.parse(stdout) as Record<string, unknown>;
-    const formats = (info.formats as Record<string, unknown>[]) ?? [];
-    const format = formats.find((f) => String(f.format_id) === formatId) ?? info;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
+  res.setHeader("Transfer-Encoding", "chunked");
 
-    const downloadUrl = String(
-      (format as Record<string, unknown>).url ?? info.url ?? ""
-    );
-    const title = String(info.title ?? "video").replace(/[^a-zA-Z0-9_\- ]/g, "_");
-    const ext = String((format as Record<string, unknown>).ext ?? "mp4");
-    const height = (format as Record<string, unknown>).height;
-    const isAudioOnly = (format as Record<string, unknown>).vcodec === "none";
-    const quality = isAudioOnly ? "audio" : height ? `${height}p` : "unknown";
+  const args = [
+    "--no-warnings",
+    "--no-playlist",
+    "-f", isAudioOnly ? `${formatId}/bestaudio/best` : `${formatId}+bestaudio/${formatId}/best`,
+    "--merge-output-format", ext,
+    "-o", "-",
+    url,
+  ];
 
-    res.json({
-      downloadUrl,
-      filename: `${title}_${quality}.${ext}`,
-      quality,
-      isAudioOnly: !!isAudioOnly,
-    });
-  } catch (err) {
-    console.error("download error:", err);
-    res.status(500).json({
-      error: "DOWNLOAD_FAILED",
-      message: "Could not get download link.",
-    });
-  }
+  console.log(`Streaming: ${url} format=${formatId}`);
+  const proc = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+  proc.stderr.on("data", (d: Buffer) => {
+    const line = d.toString().trim();
+    if (line) console.log("[yt-dlp]", line);
+  });
+
+  proc.stdout.pipe(res);
+
+  req.on("close", () => {
+    proc.kill("SIGTERM");
+  });
+
+  proc.on("error", (err) => {
+    console.error("spawn error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "STREAM_ERROR", message: "Could not start download." });
+    }
+  });
+
+  proc.on("close", (code) => {
+    if (code !== 0) {
+      console.error(`yt-dlp exited with code ${code}`);
+    }
+  });
 });
 
 export default router;

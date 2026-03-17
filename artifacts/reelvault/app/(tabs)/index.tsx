@@ -38,7 +38,7 @@ const C = Colors.dark;
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
   const { isPremium, addToHistory } = useApp();
-  const { fetchVideoInfo, fetchDownloadLink, isLoadingInfo, error, clearError } = useVideoApi();
+  const { fetchVideoInfo, getStreamUrl, isLoadingInfo, error, clearError } = useVideoApi();
 
   const [url, setUrl] = useState("");
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
@@ -80,31 +80,38 @@ export default function DownloadScreen() {
 
   const handleDownload = async (quality: VideoQuality) => {
     if (!videoInfo) return;
-    const result = await fetchDownloadLink(videoInfo.originalUrl, quality, isPremium);
-    if (result) {
-      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await addToHistory({
-        title: videoInfo.title,
-        thumbnail: videoInfo.thumbnail,
-        platform: videoInfo.platform,
-        quality: quality.quality,
-        url: videoInfo.originalUrl,
-        filename: result.filename,
-      });
-      if (Platform.OS === "web") {
-        const a = document.createElement("a");
-        a.href = result.downloadUrl;
-        a.target = "_blank";
-        a.download = result.filename;
-        a.click();
-      } else {
-        await Linking.openURL(result.downloadUrl);
-      }
+
+    const isHD = ["720p", "1080p", "2160p"].includes(quality.quality);
+    if (isHD && !isPremium) {
+      setShowPremiumModal(true);
+      return;
+    }
+
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+    const ext = quality.isAudioOnly ? "mp3" : "mp4";
+    const filename = `${videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_")}_${quality.quality}.${ext}`;
+
+    await addToHistory({
+      title: videoInfo.title,
+      thumbnail: videoInfo.thumbnail,
+      platform: videoInfo.platform,
+      quality: quality.quality,
+      url: videoInfo.originalUrl,
+      filename,
+    });
+
+    if (Platform.OS === "web") {
+      const a = document.createElement("a");
+      a.href = streamUrl;
+      a.download = filename;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } else {
-      const errMsg = error;
-      if (errMsg === "PREMIUM_REQUIRED") {
-        setShowPremiumModal(true);
-      }
+      await Linking.openURL(streamUrl);
     }
   };
 
