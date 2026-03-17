@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -64,10 +65,18 @@ const FEATURES = [
   },
 ];
 
+function isValidUTR(utr: string): boolean {
+  const cleaned = utr.trim();
+  return cleaned.length >= 12 && cleaned.length <= 22 && /^[a-zA-Z0-9]+$/.test(cleaned);
+}
+
 export default function PremiumScreen() {
   const insets = useSafeAreaInsets();
   const { isPremium, unlockPremium } = useApp();
   const [paymentStep, setPaymentStep] = useState(false);
+  const [utr, setUtr] = useState("");
+  const [utrError, setUtrError] = useState("");
+  const [utrFocused, setUtrFocused] = useState(false);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const handlePayViaUPI = async () => {
@@ -77,27 +86,35 @@ export default function PremiumScreen() {
       const canOpen = await Linking.canOpenURL(upiUrl);
       if (canOpen) {
         await Linking.openURL(upiUrl);
-        setPaymentStep(true);
       } else {
         Alert.alert(
-          "UPI App Not Found",
-          `Manually pay ₹99 to:\n\nUPI ID: ${UPI_ID}\n\nThen tap "I have paid" to unlock Premium.`,
-          [
-            { text: "Cancel", style: "cancel" },
-            { text: "I've paid", onPress: handleIHavePaid },
-          ]
+          "UPI App Nahi Mili",
+          `Manually ₹99 bhejo:\n\nUPI ID: ${UPI_ID}\n\nPayment ke baad UTR number daalo.`
         );
       }
-    } catch {
-      setPaymentStep(true);
-    }
+    } catch {}
+    setPaymentStep(true);
   };
 
-  const handleIHavePaid = async () => {
+  const handleSubmitUTR = async () => {
+    const cleaned = utr.trim();
+    if (!cleaned) {
+      setUtrError("UTR number daalna zaroori hai");
+      return;
+    }
+    if (!isValidUTR(cleaned)) {
+      setUtrError("Valid UTR daalo (12-22 characters, sirf letters aur numbers)");
+      return;
+    }
+    setUtrError("");
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await unlockPremium();
     setPaymentStep(false);
-    Alert.alert("Welcome to Premium!", "All features are now unlocked. Enjoy!");
+    setUtr("");
+    Alert.alert(
+      "Premium Active!",
+      `UTR: ${cleaned}\n\nShukriya! Aapka Premium unlock ho gaya. Ab sab features available hain.`
+    );
   };
 
   if (isPremium) {
@@ -109,21 +126,32 @@ export default function PremiumScreen() {
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 0.4 }}
         />
-        <View style={styles.activeContainer}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.activeContainer,
+            { paddingBottom: Platform.OS === "web" ? 34 + 84 : insets.bottom + 90 },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.crownCircle}>
             <MaterialCommunityIcons name="crown" size={48} color={C.gold} />
           </View>
-          <Text style={styles.activeTitle}>You're Premium</Text>
-          <Text style={styles.activeSubtitle}>All features are unlocked. Thank you for supporting ReelVault!</Text>
+          <Text style={styles.activeTitle}>Premium Active!</Text>
+          <Text style={styles.activeSubtitle}>
+            Shukriya! Aapka Premium unlock hai. Sab features available hain.
+          </Text>
           <View style={styles.activePerks}>
             {FEATURES.map((f, i) => (
               <View key={i} style={styles.activePerkRow}>
                 <Feather name="check-circle" size={16} color={C.success} />
                 <Text style={styles.activePerkText}>{f.title}</Text>
+                {!f.free && (
+                  <MaterialCommunityIcons name="crown" size={14} color={C.gold} />
+                )}
               </View>
             ))}
           </View>
-        </View>
+        </ScrollView>
       </View>
     );
   }
@@ -137,28 +165,140 @@ export default function PremiumScreen() {
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 0.4 }}
         />
-        <ScrollView contentContainerStyle={[styles.paymentStepContent, { paddingBottom: Platform.OS === "web" ? 34 + 84 : insets.bottom + 90 }]}>
-          <View style={styles.paymentStepIcon}>
-            <MaterialCommunityIcons name="check-circle" size={64} color={C.success} />
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.utrStepContent,
+            { paddingBottom: Platform.OS === "web" ? 34 + 84 : insets.bottom + 90 },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.stepIndicator}>
+            <View style={styles.stepDone}>
+              <Feather name="check" size={14} color={C.success} />
+            </View>
+            <View style={styles.stepConnector} />
+            <View style={styles.stepCurrent}>
+              <Feather name="hash" size={14} color={C.accent} />
+            </View>
           </View>
-          <Text style={styles.paymentStepTitle}>Almost there!</Text>
-          <Text style={styles.paymentStepSubtitle}>
-            After paying ₹99 to the UPI ID below, tap the button to activate your Premium.
+          <Text style={styles.stepLabel}>Step 1: Pay hue  ·  Step 2: UTR daalo</Text>
+
+          <Text style={styles.utrStepTitle}>UTR Number Daalo</Text>
+          <Text style={styles.utrStepSubtitle}>
+            UPI app mein payment hone ke baad{"\n"}
+            transaction history mein{" "}
+            <Text style={{ color: C.gold, fontFamily: "Inter_700Bold" }}>
+              UTR / Ref. No.
+            </Text>{" "}
+            milega.{"\n"}Woh yahan enter karo premium unlock hoga.
           </Text>
-          <View style={styles.upiBox}>
-            <Text style={styles.upiLabel}>UPI ID</Text>
-            <Text style={styles.upiId}>{UPI_ID}</Text>
-            <Text style={styles.upiAmount}>Amount: ₹99</Text>
+
+          <View style={styles.upiReminderCard}>
+            <View style={styles.upiReminderLeft}>
+              <MaterialCommunityIcons name="contactless-payment" size={20} color={C.accent} />
+              <View>
+                <Text style={styles.upiReminderTitle}>Payment ID</Text>
+                <Text style={styles.upiReminderValue}>{UPI_ID}</Text>
+                <Text style={styles.upiReminderAmount}>₹99 · One-time</Text>
+              </View>
+            </View>
+            <Pressable
+              onPress={handlePayViaUPI}
+              style={({ pressed }) => [styles.payAgainBtn, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text style={styles.payAgainText}>Pay Again</Text>
+            </Pressable>
           </View>
-          <Pressable
-            style={({ pressed }) => [styles.activateBtn, { opacity: pressed ? 0.85 : 1 }]}
-            onPress={handleIHavePaid}
+
+          <View style={styles.utrLabel}>
+            <Feather name="hash" size={13} color={C.textSecondary} />
+            <Text style={styles.utrLabelText}>UTR / Reference Number</Text>
+          </View>
+
+          <View
+            style={[
+              styles.utrBox,
+              utrFocused && styles.utrBoxFocused,
+              !!utrError && styles.utrBoxError,
+            ]}
           >
-            <Feather name="unlock" size={18} color="#000" />
-            <Text style={styles.activateBtnText}>I have paid — Activate Premium</Text>
+            <TextInput
+              style={styles.utrInput}
+              value={utr}
+              onChangeText={(t) => {
+                setUtr(t.toUpperCase());
+                if (utrError) setUtrError("");
+              }}
+              placeholder="e.g. 423412341234"
+              placeholderTextColor={C.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              keyboardType="default"
+              returnKeyType="done"
+              onSubmitEditing={handleSubmitUTR}
+              onFocus={() => setUtrFocused(true)}
+              onBlur={() => setUtrFocused(false)}
+              selectionColor={C.accent}
+              maxLength={22}
+            />
+            {utr.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  setUtr("");
+                  setUtrError("");
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x-circle" size={18} color={C.textMuted} />
+              </Pressable>
+            )}
+          </View>
+
+          {utrError ? (
+            <View style={styles.errorRow}>
+              <Feather name="alert-circle" size={13} color={C.error} />
+              <Text style={styles.errorMsg}>{utrError}</Text>
+            </View>
+          ) : (
+            <Text style={styles.utrHint}>
+              UPI app → Transactions → Iss payment ka detail → UTR/Ref number copy karo
+            </Text>
+          )}
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.activateBtn,
+              !utr.trim() && styles.activateBtnDisabled,
+              { opacity: pressed && !!utr.trim() ? 0.85 : 1 },
+            ]}
+            onPress={handleSubmitUTR}
+            disabled={!utr.trim()}
+          >
+            <Feather
+              name="unlock"
+              size={18}
+              color={utr.trim() ? "#000" : C.textMuted}
+            />
+            <Text
+              style={[
+                styles.activateBtnText,
+                !utr.trim() && styles.activateBtnTextDisabled,
+              ]}
+            >
+              Premium Activate Karo
+            </Text>
           </Pressable>
-          <Pressable onPress={() => setPaymentStep(false)} style={{ marginTop: 16 }}>
-            <Text style={styles.backLink}>Go back</Text>
+
+          <Pressable
+            onPress={() => {
+              setPaymentStep(false);
+              setUtr("");
+              setUtrError("");
+            }}
+            style={{ marginTop: 4 }}
+          >
+            <Text style={styles.backLink}>Wapas jao</Text>
           </Pressable>
         </ScrollView>
       </View>
@@ -185,22 +325,48 @@ export default function PremiumScreen() {
             <MaterialCommunityIcons name="crown" size={48} color={C.gold} />
           </View>
           <Text style={styles.heroTitle}>ReelVault Premium</Text>
-          <Text style={styles.heroSubtitle}>Unlock the full experience</Text>
+          <Text style={styles.heroSubtitle}>Poori experience unlock karo</Text>
           <View style={styles.priceTag}>
             <Text style={styles.priceAmount}>₹99</Text>
-            <Text style={styles.pricePeriod}>lifetime access</Text>
+            <Text style={styles.pricePeriod}>  lifetime access</Text>
+          </View>
+        </View>
+
+        <View style={styles.stepsRow}>
+          <View style={styles.stepCard}>
+            <View style={styles.stepBadge}>
+              <Text style={styles.stepBadgeText}>1</Text>
+            </View>
+            <Text style={styles.stepCardTitle}>UPI se pay karo</Text>
+            <Text style={styles.stepCardDesc}>₹99 bhejo UPI ID pe</Text>
+          </View>
+          <Feather name="arrow-right" size={18} color={C.textMuted} />
+          <View style={styles.stepCard}>
+            <View style={[styles.stepBadge, { backgroundColor: "#1A1A3A", borderColor: C.accent }]}>
+              <Text style={[styles.stepBadgeText, { color: C.accent }]}>2</Text>
+            </View>
+            <Text style={styles.stepCardTitle}>UTR daalo</Text>
+            <Text style={styles.stepCardDesc}>Transaction ka ref. no.</Text>
           </View>
         </View>
 
         <View style={styles.featuresSection}>
-          <Text style={styles.sectionLabel}>What you get</Text>
+          <Text style={styles.sectionLabel}>Kya milega</Text>
           {FEATURES.map((f, i) => (
             <View key={i} style={[styles.featureRow, !f.free && styles.premiumFeatureRow]}>
               <View style={[styles.featureIcon, !f.free && styles.premiumFeatureIcon]}>
                 {f.lib === "material" ? (
-                  <MaterialCommunityIcons name={f.icon as any} size={18} color={f.free ? C.accent : C.gold} />
+                  <MaterialCommunityIcons
+                    name={f.icon as any}
+                    size={18}
+                    color={f.free ? C.accent : C.gold}
+                  />
                 ) : (
-                  <Feather name={f.icon as any} size={18} color={f.free ? C.accent : C.gold} />
+                  <Feather
+                    name={f.icon as any}
+                    size={18}
+                    color={f.free ? C.accent : C.gold}
+                  />
                 )}
               </View>
               <View style={styles.featureInfo}>
@@ -212,7 +378,7 @@ export default function PremiumScreen() {
                   <Text style={styles.freeBadgeText}>FREE</Text>
                 </View>
               ) : (
-                <Feather name="star" size={14} color={C.gold} />
+                <MaterialCommunityIcons name="crown" size={14} color={C.gold} />
               )}
             </View>
           ))}
@@ -223,20 +389,22 @@ export default function PremiumScreen() {
           <View style={styles.upiInfoBox}>
             <MaterialCommunityIcons name="contactless-payment" size={24} color={C.accent} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.upiInfoTitle}>Pay via UPI</Text>
+              <Text style={styles.upiInfoTitle}>UPI ID</Text>
               <Text style={styles.upiInfoId}>{UPI_ID}</Text>
             </View>
-            <Text style={styles.upiInfoAmount}>₹99</Text>
+            <View style={styles.amountBadge}>
+              <Text style={styles.upiInfoAmount}>₹99</Text>
+            </View>
           </View>
           <Pressable
             style={({ pressed }) => [styles.payBtn, { opacity: pressed ? 0.85 : 1 }]}
             onPress={handlePayViaUPI}
           >
             <MaterialCommunityIcons name="contactless-payment" size={20} color="#000" />
-            <Text style={styles.payBtnText}>Pay via UPI App</Text>
+            <Text style={styles.payBtnText}>UPI se ₹99 Pay Karo</Text>
           </Pressable>
           <Text style={styles.disclaimer}>
-            After payment, tap "I have paid" to unlock all features instantly.
+            Payment ke baad UTR number enter karo → Premium instantly unlock hoga
           </Text>
         </View>
       </ScrollView>
@@ -284,7 +452,6 @@ const styles = StyleSheet.create({
   priceTag: {
     flexDirection: "row",
     alignItems: "baseline",
-    gap: 6,
     marginTop: 8,
     backgroundColor: "#2A1A00",
     paddingHorizontal: 20,
@@ -301,6 +468,45 @@ const styles = StyleSheet.create({
   pricePeriod: {
     color: C.textSecondary,
     fontSize: 14,
+    fontFamily: "Inter_400Regular",
+  },
+  stepsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  stepCard: {
+    flex: 1,
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 14,
+    padding: 14,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+  },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#2A1A00",
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBadgeText: {
+    color: C.gold,
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+  },
+  stepCardTitle: {
+    color: C.text,
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  stepCardDesc: {
+    color: C.textMuted,
+    fontSize: 11,
     fontFamily: "Inter_400Regular",
   },
   featuresSection: {
@@ -381,18 +587,27 @@ const styles = StyleSheet.create({
     borderColor: C.surfaceBorder,
   },
   upiInfoTitle: {
+    color: C.textMuted,
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    letterSpacing: 0.5,
+  },
+  upiInfoId: {
     color: C.text,
     fontSize: 14,
     fontFamily: "Inter_600SemiBold",
   },
-  upiInfoId: {
-    color: C.textSecondary,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
+  amountBadge: {
+    backgroundColor: "#2A1A00",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4A3000",
   },
   upiInfoAmount: {
     color: C.gold,
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: "Inter_700Bold",
   },
   payBtn: {
@@ -417,10 +632,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   activeContainer: {
-    flex: 1,
-    alignItems: "center",
     paddingHorizontal: 24,
     paddingTop: 40,
+    alignItems: "center",
     gap: 12,
   },
   activeTitle: {
@@ -439,7 +653,7 @@ const styles = StyleSheet.create({
   },
   activePerks: {
     width: "100%",
-    gap: 12,
+    gap: 10,
   },
   activePerkRow: {
     flexDirection: "row",
@@ -452,61 +666,173 @@ const styles = StyleSheet.create({
     borderColor: C.surfaceBorder,
   },
   activePerkText: {
+    flex: 1,
     color: C.text,
     fontSize: 14,
     fontFamily: "Inter_500Medium",
   },
-  paymentStepContent: {
+  utrStepContent: {
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 32,
     alignItems: "center",
     gap: 16,
   },
-  paymentStepIcon: {
-    marginBottom: 8,
+  stepIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 0,
   },
-  paymentStepTitle: {
+  stepDone: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#0D2A1A",
+    borderWidth: 2,
+    borderColor: C.success,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepConnector: {
+    width: 48,
+    height: 2,
+    backgroundColor: C.accent,
+    opacity: 0.4,
+  },
+  stepCurrent: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#0D0D2A",
+    borderWidth: 2,
+    borderColor: C.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepLabel: {
+    color: C.textMuted,
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    letterSpacing: 0.3,
+  },
+  utrStepTitle: {
     color: C.text,
-    fontSize: 26,
+    fontSize: 22,
     fontFamily: "Inter_700Bold",
+    textAlign: "center",
   },
-  paymentStepSubtitle: {
+  utrStepSubtitle: {
     color: C.textSecondary,
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
-    lineHeight: 24,
+    lineHeight: 22,
   },
-  upiBox: {
+  upiReminderCard: {
     width: "100%",
-    backgroundColor: C.surfaceElevated,
-    borderRadius: 16,
-    padding: 20,
+    flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "space-between",
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
     borderColor: C.surfaceBorder,
   },
-  upiLabel: {
+  upiReminderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  upiReminderTitle: {
     color: C.textMuted,
     fontSize: 11,
+    fontFamily: "Inter_400Regular",
+  },
+  upiReminderValue: {
+    color: C.text,
+    fontSize: 13,
     fontFamily: "Inter_600SemiBold",
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
-  upiId: {
-    color: C.gold,
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-  },
-  upiAmount: {
+  upiReminderAmount: {
     color: C.textSecondary,
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+  },
+  payAgainBtn: {
+    backgroundColor: "#1A1A3A",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.accent,
+  },
+  payAgainText: {
+    color: C.accent,
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  utrLabel: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  utrLabelText: {
+    color: C.textSecondary,
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.5,
+  },
+  utrBox: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: C.surfaceBorder,
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  utrBoxFocused: {
+    borderColor: C.accent,
+    backgroundColor: "#0A0A1E",
+  },
+  utrBoxError: {
+    borderColor: C.error,
+    backgroundColor: "#1A0000",
+  },
+  utrInput: {
+    flex: 1,
+    color: C.text,
+    fontSize: 18,
+    fontFamily: "Inter_600SemiBold",
+    paddingVertical: 16,
+    letterSpacing: 1.5,
+  },
+  errorRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  errorMsg: {
+    flex: 1,
+    color: C.error,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  utrHint: {
+    color: C.textMuted,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    width: "100%",
+    lineHeight: 18,
   },
   activateBtn: {
     width: "100%",
-    backgroundColor: C.success,
+    backgroundColor: C.gold,
     borderRadius: 14,
     paddingVertical: 16,
     flexDirection: "row",
@@ -514,10 +840,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+  activateBtnDisabled: {
+    backgroundColor: C.surfaceBorder,
+  },
   activateBtnText: {
     color: "#000",
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: "Inter_700Bold",
+  },
+  activateBtnTextDisabled: {
+    color: C.textMuted,
   },
   backLink: {
     color: C.textSecondary,
