@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "ReelVault"
+version = "1.0.0"
+id = "artifacts/reelvault"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+localPort = 23797
+name = "expo"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/reelvault run dev"
+
+[services.env]
+PORT = "23797"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/reelvault", "run", "build"]
+run = ["pnpm", "--filter", "@workspace/reelvault", "run", "serve"]

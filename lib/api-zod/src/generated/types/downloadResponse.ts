@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface DownloadResponse {
+  downloadUrl: string;
+  filename: string;
+  quality: string;
+  isAudioOnly: boolean;
 }

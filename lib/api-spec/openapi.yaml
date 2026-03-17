@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ReelVault API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: video
+    description: Video download operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /video/info:
+    post:
+      operationId: getVideoInfo
+      tags: [video]
+      summary: Get video metadata
+      description: Fetches video metadata including title, thumbnail, duration and available qualities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoInfoRequest"
+      responses:
+        "200":
+          description: Video info retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoInfoResponse"
+        "400":
+          description: Invalid URL or request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /video/download:
+    post:
+      operationId: getDownloadLink
+      tags: [video]
+      summary: Get download link for a video
+      description: Returns a download URL for the specified video at the given quality
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DownloadRequest"
+      responses:
+        "200":
+          description: Download link retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +108,101 @@ components:
           type: string
       required:
         - status
-
+    VideoInfoRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          description: The video URL to fetch info for
+      required:
+        - url
+    VideoQuality:
+      type: object
+      properties:
+        formatId:
+          type: string
+        quality:
+          type: string
+        resolution:
+          type: string
+        ext:
+          type: string
+        filesize:
+          type: number
+          nullable: true
+        isAudioOnly:
+          type: boolean
+      required:
+        - formatId
+        - quality
+        - resolution
+        - ext
+        - isAudioOnly
+    VideoInfoResponse:
+      type: object
+      properties:
+        title:
+          type: string
+        thumbnail:
+          type: string
+          nullable: true
+        duration:
+          type: number
+          nullable: true
+        uploader:
+          type: string
+          nullable: true
+        platform:
+          type: string
+        qualities:
+          type: array
+          items:
+            $ref: "#/components/schemas/VideoQuality"
+        originalUrl:
+          type: string
+      required:
+        - title
+        - platform
+        - qualities
+        - originalUrl
+    DownloadRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          description: The video URL
+        formatId:
+          type: string
+          description: The format ID from the qualities list
+        isPremium:
+          type: boolean
+          description: Whether the user has premium access
+      required:
+        - url
+        - formatId
+    DownloadResponse:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+        filename:
+          type: string
+        quality:
+          type: string
+        isAudioOnly:
+          type: boolean
+      required:
+        - downloadUrl
+        - filename
+        - quality
+        - isAudioOnly
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
