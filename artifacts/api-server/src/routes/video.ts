@@ -207,9 +207,10 @@ router.post("/info", async (req: Request, res: Response) => {
 });
 
 router.get("/stream", async (req: Request, res: Response) => {
-  const { url, formatId, isPremium, title } = req.query as {
+  const { url, formatId, quality, isPremium, title } = req.query as {
     url?: string;
     formatId?: string;
+    quality?: string;
     isPremium?: string;
     title?: string;
   };
@@ -224,7 +225,7 @@ router.get("/stream", async (req: Request, res: Response) => {
   }
 
   const premiumUser = isPremium === "true";
-  const isHdFormat = ["720", "1080", "2160"].some((q) => formatId.includes(q));
+  const isHdFormat = ["720p", "1080p", "2160p"].includes(quality ?? "");
   if (isHdFormat && !premiumUser) {
     res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require Premium" });
     return;

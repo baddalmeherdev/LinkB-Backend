@@ -41,6 +41,7 @@ export function useVideoApi() {
     const params = new URLSearchParams({
       url: videoUrl,
       formatId: quality.formatId,
+      quality: quality.quality,
       isPremium: String(isPremium),
       title,
     });
