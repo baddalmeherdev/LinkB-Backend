@@ -44,7 +44,7 @@ function generateCaptions(title: string, platform: string): string {
     `📌 Key Highlights:`,
     `• Engaging content you won't want to miss`,
     `• Perfect for sharing with friends & family`,
-    `• Downloaded with ReelVault ⚡`,
+    `• Downloaded with LinkDrop ⚡`,
   ];
   return lines.join("\n");
 }
@@ -70,7 +70,7 @@ function generateHashtags(title: string, platform: string): string {
   const allTags = [
     ...words,
     ...platTags,
-    "#ReelVault",
+    "#LinkDrop",
     "#VideoDownloader",
     "#MustWatch",
   ];
@@ -169,7 +169,7 @@ export default function DownloadScreen() {
           setDownloadedUri(result.uri);
           Alert.alert(
             "Download Complete!",
-            `"${videoInfo.title}" save ho gaya.\n\nShare karne ke liye Share button dabao.`,
+            `"${videoInfo.title}" has been saved.\n\nTap the Share button to share it.`,
             [{ text: "OK" }]
           );
         }
@@ -191,7 +191,7 @@ export default function DownloadScreen() {
         } catch {}
       }
       await Clipboard.setStringAsync(videoInfo.originalUrl);
-      Alert.alert("Link Copy Ho Gaya!", "Video link clipboard mein copy ho gaya.");
+      Alert.alert("Link Copied!", "Video link copied to clipboard.");
       return;
     }
 
@@ -205,12 +205,12 @@ export default function DownloadScreen() {
       }
     } else {
       Alert.alert(
-        "Video Download Nahi Hai",
-        "Share karne ke liye pehle video download karo.",
+        "Video Not Downloaded",
+        "Download the video first before sharing.",
         [
           { text: "Cancel", style: "cancel" },
           {
-            text: "Download Karo",
+            text: "Download",
             onPress: async () => {
               if (!videoInfo.qualities.length) return;
               const best = videoInfo.qualities.find((q) => !["720p","1080p","2160p"].includes(q.quality) && !q.isAudioOnly)
@@ -247,22 +247,22 @@ export default function DownloadScreen() {
     if (!captionText) return;
     await Clipboard.setStringAsync(captionText);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert("Copied!", "Caption clipboard mein copy ho gaya.");
+    Alert.alert("Copied!", "Caption copied to clipboard.");
   };
 
   const handleCopyHashtags = async () => {
     if (!hashtagText) return;
     await Clipboard.setStringAsync(hashtagText);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert("Copied!", "Hashtags clipboard mein copy ho gaye.");
+    Alert.alert("Copied!", "Hashtags copied to clipboard.");
   };
 
   const handleTrim = () => {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
-      "Video Trim",
-      "Video trim karne ke liye browser mein open hoga.",
+      "Trim Video",
+      "This will open a video trimmer in your browser.",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Open", onPress: () => Linking.openURL(`https://clideo.com/cut-video`) },
@@ -283,8 +283,8 @@ export default function DownloadScreen() {
 
       <View style={styles.header}>
         <View>
-          <Text style={styles.appName}>ReelVault</Text>
-          <Text style={styles.tagline}>Download any video</Text>
+          <Text style={styles.appName}>LinkDrop</Text>
+          <Text style={styles.tagline}>Download any video, anywhere</Text>
         </View>
         {isPremium ? (
           <View style={styles.premiumBadge}>
@@ -316,7 +316,7 @@ export default function DownloadScreen() {
               style={styles.input}
               value={url}
               onChangeText={setUrl}
-              placeholder="Video URL yahan paste karo..."
+              placeholder="Paste any video URL here..."
               placeholderTextColor={C.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -388,7 +388,7 @@ export default function DownloadScreen() {
                 onPress={async () => {
                   await Clipboard.setStringAsync(videoInfo.originalUrl);
                   if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  Alert.alert("Copied!", "Link copy ho gaya.");
+                  Alert.alert("Copied!", "Link copied to clipboard.");
                 }}
               >
                 <Feather name="copy" size={16} color={C.accent} />
@@ -406,7 +406,7 @@ export default function DownloadScreen() {
             {downloadedUri ? (
               <Animated.View entering={FadeIn} style={styles.downloadedBanner}>
                 <Feather name="check-circle" size={16} color={C.success} />
-                <Text style={styles.downloadedBannerText}>Video download ho gaya!</Text>
+                <Text style={styles.downloadedBannerText}>Video downloaded successfully!</Text>
                 <Pressable onPress={handleShare} style={styles.shareNowBtn}>
                   <Text style={styles.shareNowText}>Share</Text>
                 </Pressable>
@@ -475,7 +475,7 @@ export default function DownloadScreen() {
             ) : null}
 
             <View style={styles.qualitiesSection}>
-              <Text style={styles.sectionLabel}>Quality Choose Karo</Text>
+              <Text style={styles.sectionLabel}>Choose Quality</Text>
               <View style={styles.qualitiesList}>
                 {videoInfo.qualities.map((q) => (
                   <QualityRow
@@ -500,9 +500,9 @@ export default function DownloadScreen() {
             <View style={styles.emptyIconWrap}>
               <Feather name="download-cloud" size={40} color={C.textMuted} />
             </View>
-            <Text style={styles.emptyTitle}>Video URL paste karo</Text>
+            <Text style={styles.emptyTitle}>Paste a video URL to get started</Text>
             <Text style={styles.emptySubtitle}>
-              YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo aur bahut aur platforms support hain
+              YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo, Dailymotion and 1000+ platforms supported
             </Text>
             <View style={styles.supportedPlatforms}>
               {["YT", "IG", "FB", "TT", "TW", "VM"].map((p) => (

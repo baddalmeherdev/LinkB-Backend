@@ -49,7 +49,7 @@ export function PremiumModal({ visible, onClose }: Props) {
 
   const handlePayViaUPI = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=ReelVault&am=99&cu=INR&tn=ReelVault+Premium`;
+    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkDrop&am=99&cu=INR&tn=LinkDrop+Premium`;
     try {
       const canOpen = await Linking.canOpenURL(upiUrl);
       if (canOpen) {
@@ -57,7 +57,7 @@ export function PremiumModal({ visible, onClose }: Props) {
       } else {
         Alert.alert(
           "UPI App Not Found",
-          `Manually pay ₹99 to:\n\nUPI ID: ${UPI_ID}\n\nFir neeche UTR number daalo.`
+          `Manually pay ₹99 to:\n\nUPI ID: ${UPI_ID}\n\nEnter the UTR number below after payment.`
         );
       }
     } catch {}
@@ -67,11 +67,11 @@ export function PremiumModal({ visible, onClose }: Props) {
   const handleSubmitUTR = async () => {
     const cleaned = utr.trim();
     if (!cleaned) {
-      setUtrError("UTR number daalna zaroori hai");
+      setUtrError("Please enter your UTR number");
       return;
     }
     if (!isValidUTR(cleaned)) {
-      setUtrError("Valid UTR number daalo (12-22 characters, only letters & numbers)");
+      setUtrError("Enter a valid UTR (12-22 characters, letters and numbers only)");
       return;
     }
     setUtrError("");
@@ -82,7 +82,7 @@ export function PremiumModal({ visible, onClose }: Props) {
     onClose();
     Alert.alert(
       "Premium Activated!",
-      `UTR: ${cleaned}\n\nShukriya! Aapka Premium unlock ho gaya. Ab sab features available hain.`
+      `UTR: ${cleaned}\n\nThank you! Your Premium is now unlocked. All features are available.`
     );
   };
 
@@ -111,7 +111,7 @@ export function PremiumModal({ visible, onClose }: Props) {
                 </Pressable>
               </View>
 
-              <Text style={styles.title}>ReelVault Premium</Text>
+              <Text style={styles.title}>LinkDrop Premium</Text>
               <Text style={styles.subtitle}>Unlock the full experience</Text>
 
               <View style={styles.priceRow}>

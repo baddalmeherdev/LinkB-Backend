@@ -81,15 +81,15 @@ export default function PremiumScreen() {
 
   const handlePayViaUPI = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=ReelVault&am=99&cu=INR&tn=ReelVault+Premium`;
+    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkDrop&am=99&cu=INR&tn=LinkDrop+Premium`;
     try {
       const canOpen = await Linking.canOpenURL(upiUrl);
       if (canOpen) {
         await Linking.openURL(upiUrl);
       } else {
         Alert.alert(
-          "UPI App Nahi Mili",
-          `Manually ₹99 bhejo:\n\nUPI ID: ${UPI_ID}\n\nPayment ke baad UTR number daalo.`
+          "No UPI App Found",
+          `Please send ₹99 manually:\n\nUPI ID: ${UPI_ID}\n\nEnter the UTR number after payment.`
         );
       }
     } catch {}
@@ -99,11 +99,11 @@ export default function PremiumScreen() {
   const handleSubmitUTR = async () => {
     const cleaned = utr.trim();
     if (!cleaned) {
-      setUtrError("UTR number daalna zaroori hai");
+      setUtrError("Please enter your UTR number");
       return;
     }
     if (!isValidUTR(cleaned)) {
-      setUtrError("Valid UTR daalo (12-22 characters, sirf letters aur numbers)");
+      setUtrError("Enter a valid UTR (12-22 characters, letters and numbers only)");
       return;
     }
     setUtrError("");
@@ -113,7 +113,7 @@ export default function PremiumScreen() {
     setUtr("");
     Alert.alert(
       "Premium Active!",
-      `UTR: ${cleaned}\n\nShukriya! Aapka Premium unlock ho gaya. Ab sab features available hain.`
+      `UTR: ${cleaned}\n\nThank you! Your Premium is now unlocked. All features are available.`
     );
   };
 
@@ -138,7 +138,7 @@ export default function PremiumScreen() {
           </View>
           <Text style={styles.activeTitle}>Premium Active!</Text>
           <Text style={styles.activeSubtitle}>
-            Shukriya! Aapka Premium unlock hai. Sab features available hain.
+            Thank you! Your Premium is active. All features are now unlocked.
           </Text>
           <View style={styles.activePerks}>
             {FEATURES.map((f, i) => (
@@ -182,16 +182,16 @@ export default function PremiumScreen() {
               <Feather name="hash" size={14} color={C.accent} />
             </View>
           </View>
-          <Text style={styles.stepLabel}>Step 1: Pay hue  ·  Step 2: UTR daalo</Text>
+          <Text style={styles.stepLabel}>Step 1: Pay done  ·  Step 2: Enter UTR</Text>
 
-          <Text style={styles.utrStepTitle}>UTR Number Daalo</Text>
+          <Text style={styles.utrStepTitle}>Enter UTR Number</Text>
           <Text style={styles.utrStepSubtitle}>
-            UPI app mein payment hone ke baad{"\n"}
-            transaction history mein{" "}
+            After payment in your UPI app,{"\n"}
+            find the{" "}
             <Text style={{ color: C.gold, fontFamily: "Inter_700Bold" }}>
               UTR / Ref. No.
             </Text>{" "}
-            milega.{"\n"}Woh yahan enter karo premium unlock hoga.
+            in your transaction history.{"\n"}Enter it below to unlock Premium.
           </Text>
 
           <View style={styles.upiReminderCard}>
@@ -262,7 +262,7 @@ export default function PremiumScreen() {
             </View>
           ) : (
             <Text style={styles.utrHint}>
-              UPI app → Transactions → Iss payment ka detail → UTR/Ref number copy karo
+              UPI app → Transactions → Find this payment → Copy UTR/Ref number
             </Text>
           )}
 
@@ -286,7 +286,7 @@ export default function PremiumScreen() {
                 !utr.trim() && styles.activateBtnTextDisabled,
               ]}
             >
-              Premium Activate Karo
+              Activate Premium
             </Text>
           </Pressable>
 
@@ -298,7 +298,7 @@ export default function PremiumScreen() {
             }}
             style={{ marginTop: 4 }}
           >
-            <Text style={styles.backLink}>Wapas jao</Text>
+            <Text style={styles.backLink}>Go back</Text>
           </Pressable>
         </ScrollView>
       </View>
@@ -324,8 +324,8 @@ export default function PremiumScreen() {
           <View style={styles.crownCircle}>
             <MaterialCommunityIcons name="crown" size={48} color={C.gold} />
           </View>
-          <Text style={styles.heroTitle}>ReelVault Premium</Text>
-          <Text style={styles.heroSubtitle}>Poori experience unlock karo</Text>
+          <Text style={styles.heroTitle}>LinkDrop Premium</Text>
+          <Text style={styles.heroSubtitle}>Unlock the full experience</Text>
           <View style={styles.priceTag}>
             <Text style={styles.priceAmount}>₹99</Text>
             <Text style={styles.pricePeriod}>  lifetime access</Text>
@@ -337,21 +337,21 @@ export default function PremiumScreen() {
             <View style={styles.stepBadge}>
               <Text style={styles.stepBadgeText}>1</Text>
             </View>
-            <Text style={styles.stepCardTitle}>UPI se pay karo</Text>
-            <Text style={styles.stepCardDesc}>₹99 bhejo UPI ID pe</Text>
+            <Text style={styles.stepCardTitle}>Pay via UPI</Text>
+            <Text style={styles.stepCardDesc}>Send ₹99 to the UPI ID</Text>
           </View>
           <Feather name="arrow-right" size={18} color={C.textMuted} />
           <View style={styles.stepCard}>
             <View style={[styles.stepBadge, { backgroundColor: "#1A1A3A", borderColor: C.accent }]}>
               <Text style={[styles.stepBadgeText, { color: C.accent }]}>2</Text>
             </View>
-            <Text style={styles.stepCardTitle}>UTR daalo</Text>
-            <Text style={styles.stepCardDesc}>Transaction ka ref. no.</Text>
+            <Text style={styles.stepCardTitle}>Enter UTR</Text>
+            <Text style={styles.stepCardDesc}>Transaction reference no.</Text>
           </View>
         </View>
 
         <View style={styles.featuresSection}>
-          <Text style={styles.sectionLabel}>Kya milega</Text>
+          <Text style={styles.sectionLabel}>What you get</Text>
           {FEATURES.map((f, i) => (
             <View key={i} style={[styles.featureRow, !f.free && styles.premiumFeatureRow]}>
               <View style={[styles.featureIcon, !f.free && styles.premiumFeatureIcon]}>
@@ -401,11 +401,18 @@ export default function PremiumScreen() {
             onPress={handlePayViaUPI}
           >
             <MaterialCommunityIcons name="contactless-payment" size={20} color="#000" />
-            <Text style={styles.payBtnText}>UPI se ₹99 Pay Karo</Text>
+            <Text style={styles.payBtnText}>Pay ₹99 via UPI</Text>
           </Pressable>
           <Text style={styles.disclaimer}>
-            Payment ke baad UTR number enter karo → Premium instantly unlock hoga
+            Enter UTR number after payment → Premium unlocks instantly
           </Text>
+        </View>
+
+        <View style={styles.aboutSection}>
+          <View style={styles.aboutDivider} />
+          <Text style={styles.aboutAppName}>LinkDrop</Text>
+          <Text style={styles.aboutDev}>Developed by Badal Meher</Text>
+          <Text style={styles.aboutVersion}>Version 1.0.0</Text>
         </View>
       </ScrollView>
     </View>
@@ -855,5 +862,34 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     fontSize: 14,
     fontFamily: "Inter_500Medium",
+  },
+  aboutSection: {
+    alignItems: "center",
+    paddingTop: 8,
+    paddingBottom: 8,
+    gap: 4,
+  },
+  aboutDivider: {
+    width: 40,
+    height: 1,
+    backgroundColor: C.surfaceBorder,
+    marginBottom: 16,
+  },
+  aboutAppName: {
+    color: C.textMuted,
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1,
+  },
+  aboutDev: {
+    color: C.textSecondary,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  aboutVersion: {
+    color: C.textMuted,
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    marginTop: 2,
   },
 });

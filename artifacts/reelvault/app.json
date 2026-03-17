@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "ReelVault",
-    "slug": "reelvault",
+    "name": "LinkDrop",
+    "slug": "linkdrop",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "reelvault",
+    "scheme": "linkdrop",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {

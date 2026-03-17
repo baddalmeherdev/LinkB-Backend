@@ -20,12 +20,12 @@ export function useVideoApi() {
       });
       const data = await res.json() as Record<string, unknown>;
       if (!res.ok) {
-        setError(String((data as { message?: string }).message ?? "Video info fetch nahi ho saka"));
+        setError(String((data as { message?: string }).message ?? "Could not fetch video info. Please try again."));
         return null;
       }
       return data as unknown as VideoInfo;
     } catch {
-      setError("Network error. Internet check karo.");
+      setError("Network error. Please check your internet connection.");
       return null;
     } finally {
       setIsLoadingInfo(false);

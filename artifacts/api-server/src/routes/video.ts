@@ -46,7 +46,17 @@ function detectPlatform(url: string): string {
   if (/tiktok\.com/.test(url)) return "TikTok";
   if (/vimeo\.com/.test(url)) return "Vimeo";
   if (/dailymotion\.com/.test(url)) return "Dailymotion";
-  return "Unknown";
+  if (/twitch\.tv/.test(url)) return "Twitch";
+  if (/reddit\.com/.test(url)) return "Reddit";
+  if (/pinterest\.com/.test(url)) return "Pinterest";
+  if (/linkedin\.com/.test(url)) return "LinkedIn";
+  if (/snapchat\.com/.test(url)) return "Snapchat";
+  if (/bilibili\.com/.test(url)) return "Bilibili";
+  if (/soundcloud\.com/.test(url)) return "SoundCloud";
+  if (/rumble\.com/.test(url)) return "Rumble";
+  if (/odysee\.com/.test(url)) return "Odysee";
+  if (/kick\.com/.test(url)) return "Kick";
+  return "Web";
 }
 
 router.post("/info", async (req: Request, res: Response) => {
@@ -178,16 +188,20 @@ router.post("/info", async (req: Request, res: Response) => {
     console.error("yt-dlp error:", err);
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("not found") || msg.includes("ENOENT")) {
-      res.status(500).json({ error: "YT_DLP_MISSING", message: "yt-dlp is not installed on the server." });
+      res.status(500).json({ error: "YT_DLP_MISSING", message: "Downloader service is unavailable. Please try again later." });
       return;
     }
     if (msg.includes("private") || msg.includes("unavailable") || msg.includes("not available")) {
-      res.status(400).json({ error: "FETCH_FAILED", message: "This video is private or unavailable." });
+      res.status(400).json({ error: "FETCH_FAILED", message: "This video is private or unavailable. Please check the URL and try again." });
+      return;
+    }
+    if (msg.includes("Unsupported URL") || msg.includes("unsupported url")) {
+      res.status(400).json({ error: "UNSUPPORTED_URL", message: "This URL is not supported. Please try a URL from YouTube, Instagram, TikTok, Facebook, Twitter, or another supported platform." });
       return;
     }
     res.status(500).json({
       error: "FETCH_FAILED",
-      message: "Could not fetch video info. Try a different URL.",
+      message: "Could not fetch media info. Please check the URL and try again.",
     });
   }
 });

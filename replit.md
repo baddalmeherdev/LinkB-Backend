@@ -1,8 +1,8 @@
-# ReelVault Workspace
+# LinkDrop Workspace
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. ReelVault is a mobile-first video downloader and sharing app.
+pnpm workspace monorepo using TypeScript. LinkDrop is a mobile-first universal video downloader and sharing app.
 
 ## Stack
 
@@ -37,7 +37,7 @@ artifacts-monorepo/
 └── package.json
 ```
 
-## ReelVault App Features
+## LinkDrop App Features
 
 ### Core Features
 - Paste/share any video URL (YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo, etc.)
