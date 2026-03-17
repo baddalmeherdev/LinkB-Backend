@@ -4,7 +4,7 @@ import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Sharing from "expo-sharing";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Linking,
@@ -25,6 +25,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AdBanner } from "@/components/AdBanner";
+import { LinkPreviewCard, type PreviewData } from "@/components/LinkPreviewCard";
 import { PremiumModal } from "@/components/PremiumModal";
 import { QualityRow } from "@/components/QualityRow";
 import { VideoInfoSkeleton } from "@/components/SkeletonLoader";
@@ -34,6 +35,10 @@ import { useApp, type VideoInfo, type VideoQuality } from "@/context/AppContext"
 import { useVideoApi } from "@/hooks/useVideoApi";
 
 const C = Colors.dark;
+
+function isValidUrl(text: string): boolean {
+  return text.startsWith("http://") || text.startsWith("https://");
+}
 
 function generateCaptions(title: string, platform: string): string {
   const lines = [
@@ -67,22 +72,25 @@ function generateHashtags(title: string, platform: string): string {
   };
 
   const platTags = platformTags[platform] ?? ["#Video", "#Trending"];
-  const allTags = [
-    ...words,
-    ...platTags,
-    "#LinkDrop",
-    "#VideoDownloader",
-    "#MustWatch",
-  ];
+  const allTags = [...words, ...platTags, "#LinkDrop", "#VideoDownloader", "#MustWatch"];
   return [...new Set(allTags)].join(" ");
 }
 
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
   const { isPremium, addToHistory } = useApp();
-  const { fetchVideoInfo, getStreamUrl, isLoadingInfo, error, clearError } = useVideoApi();
+  const {
+    fetchPreview,
+    fetchVideoInfo,
+    getStreamUrl,
+    isLoadingPreview,
+    isLoadingInfo,
+    error,
+    clearError,
+  } = useVideoApi();
 
   const [url, setUrl] = useState("");
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
@@ -93,6 +101,7 @@ export default function DownloadScreen() {
   const [showHashtags, setShowHashtags] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputBorderAnim = useSharedValue(0);
 
   const inputStyle = useAnimatedStyle(() => ({
@@ -102,30 +111,81 @@ export default function DownloadScreen() {
   const handleFocus = () => { inputBorderAnim.value = withSpring(1); };
   const handleBlur = () => { inputBorderAnim.value = withSpring(0); };
 
-  const handlePaste = async () => {
-    const text = await Clipboard.getStringAsync();
-    if (text) {
-      setUrl(text);
-      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-  };
-
-  const handleFetch = useCallback(async () => {
-    if (!url.trim()) return;
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    clearError();
+  const resetState = () => {
+    setPreviewData(null);
     setVideoInfo(null);
     setDownloadedUri(null);
     setCaptionText(null);
     setHashtagText(null);
     setShowCaptions(false);
     setShowHashtags(false);
-    const info = await fetchVideoInfo(url.trim());
+  };
+
+  const handleUrlChange = (text: string) => {
+    setUrl(text);
+    resetState();
+    clearError();
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    const trimmed = text.trim();
+    if (isValidUrl(trimmed)) {
+      debounceRef.current = setTimeout(async () => {
+        const preview = await fetchPreview(trimmed);
+        if (preview) {
+          setPreviewData(preview);
+          setTimeout(() => scrollRef.current?.scrollTo({ y: 200, animated: true }), 200);
+        }
+      }, 700);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const handlePaste = async () => {
+    const text = await Clipboard.getStringAsync();
+    if (text) {
+      handleUrlChange(text);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const handleGetFormats = useCallback(async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const info = await fetchVideoInfo(trimmed);
     if (info) {
       setVideoInfo(info);
-      setTimeout(() => scrollRef.current?.scrollTo({ y: 220, animated: true }), 300);
+      setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 300);
     }
-  }, [url, fetchVideoInfo, clearError]);
+  }, [url, fetchVideoInfo]);
+
+  const handleFetch = useCallback(async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    clearError();
+    resetState();
+
+    if (isValidUrl(trimmed)) {
+      const preview = await fetchPreview(trimmed);
+      if (preview) {
+        setPreviewData(preview);
+        setTimeout(() => scrollRef.current?.scrollTo({ y: 200, animated: true }), 200);
+      }
+    } else {
+      const info = await fetchVideoInfo(trimmed);
+      if (info) {
+        setVideoInfo(info);
+        setTimeout(() => scrollRef.current?.scrollTo({ y: 220, animated: true }), 300);
+      }
+    }
+  }, [url, fetchPreview, fetchVideoInfo, clearError]);
 
   const handleDownload = async (quality: VideoQuality) => {
     if (!videoInfo) return;
@@ -213,8 +273,9 @@ export default function DownloadScreen() {
             text: "Download",
             onPress: async () => {
               if (!videoInfo.qualities.length) return;
-              const best = videoInfo.qualities.find((q) => !["720p","1080p","2160p"].includes(q.quality) && !q.isAudioOnly)
-                ?? videoInfo.qualities[0];
+              const best = videoInfo.qualities.find(
+                (q) => !["720p", "1080p", "2160p"].includes(q.quality) && !q.isAudioOnly
+              ) ?? videoInfo.qualities[0];
               await handleDownload(best);
             },
           },
@@ -271,6 +332,7 @@ export default function DownloadScreen() {
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const isBusy = isLoadingPreview || isLoadingInfo;
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
@@ -315,7 +377,7 @@ export default function DownloadScreen() {
             <TextInput
               style={styles.input}
               value={url}
-              onChangeText={setUrl}
+              onChangeText={handleUrlChange}
               placeholder="Paste any video URL here..."
               placeholderTextColor={C.textMuted}
               autoCapitalize="none"
@@ -328,7 +390,7 @@ export default function DownloadScreen() {
               selectionColor={C.accent}
             />
             {url.length > 0 ? (
-              <Pressable onPress={() => setUrl("")} style={styles.clearBtn}>
+              <Pressable onPress={() => { setUrl(""); resetState(); clearError(); }} style={styles.clearBtn}>
                 <Feather name="x-circle" size={16} color={C.textMuted} />
               </Pressable>
             ) : null}
@@ -340,14 +402,16 @@ export default function DownloadScreen() {
               <Text style={styles.pasteBtnText}>Paste</Text>
             </Pressable>
             <Pressable
-              style={[styles.fetchBtn, (!url.trim() || isLoadingInfo) && styles.fetchBtnDisabled]}
+              style={[styles.fetchBtn, (!url.trim() || isBusy) && styles.fetchBtnDisabled]}
               onPress={handleFetch}
-              disabled={!url.trim() || isLoadingInfo}
+              disabled={!url.trim() || isBusy}
             >
-              {isLoadingInfo ? (
+              {isBusy ? (
                 <>
                   <Feather name="loader" size={16} color="#fff" />
-                  <Text style={styles.fetchBtnText}>Loading...</Text>
+                  <Text style={styles.fetchBtnText}>
+                    {isLoadingPreview ? "Previewing..." : "Loading..."}
+                  </Text>
                 </>
               ) : (
                 <>
@@ -363,6 +427,28 @@ export default function DownloadScreen() {
           <Animated.View entering={FadeIn} style={styles.errorBox}>
             <Feather name="alert-circle" size={16} color={C.error} />
             <Text style={styles.errorText}>{error}</Text>
+          </Animated.View>
+        ) : null}
+
+        {(isLoadingPreview && !previewData) ? (
+          <Animated.View entering={FadeIn} style={styles.skeletonWrap}>
+            <LinkPreviewCard preview={null} isLoading />
+          </Animated.View>
+        ) : null}
+
+        {previewData && !videoInfo && !isLoadingInfo ? (
+          <Animated.View entering={FadeInDown} style={styles.previewSection}>
+            <LinkPreviewCard preview={previewData} isLoading={isLoadingPreview} />
+
+            <Pressable
+              style={styles.getFormatsBtn}
+              onPress={handleGetFormats}
+              disabled={isLoadingInfo}
+            >
+              <Feather name="download-cloud" size={17} color="#fff" />
+              <Text style={styles.getFormatsBtnText}>Get Download Options</Text>
+              <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.7)" />
+            </Pressable>
           </Animated.View>
         ) : null}
 
@@ -476,6 +562,28 @@ export default function DownloadScreen() {
 
             <View style={styles.qualitiesSection}>
               <Text style={styles.sectionLabel}>Choose Quality</Text>
+
+              {!isPremium ? (
+                <Animated.View entering={FadeIn} style={styles.watermarkBanner}>
+                  <View style={styles.watermarkLeft}>
+                    <MaterialCommunityIcons name="watermark" size={16} color={C.gold} />
+                    <View>
+                      <Text style={styles.watermarkTitle}>Free downloads include a watermark</Text>
+                      <Text style={styles.watermarkSub}>Upgrade to get clean, watermark-free videos</Text>
+                    </View>
+                  </View>
+                  <Pressable style={styles.upgradeBtn} onPress={() => setShowPremiumModal(true)}>
+                    <MaterialCommunityIcons name="crown" size={12} color="#000" />
+                    <Text style={styles.upgradeBtnText}>Upgrade</Text>
+                  </Pressable>
+                </Animated.View>
+              ) : (
+                <Animated.View entering={FadeIn} style={styles.cleanBanner}>
+                  <Feather name="check-circle" size={14} color={C.success} />
+                  <Text style={styles.cleanBannerText}>Premium — no watermark on your downloads</Text>
+                </Animated.View>
+              )}
+
               <View style={styles.qualitiesList}>
                 {videoInfo.qualities.map((q) => (
                   <QualityRow
@@ -495,7 +603,7 @@ export default function DownloadScreen() {
           </Animated.View>
         ) : null}
 
-        {!videoInfo && !isLoadingInfo ? (
+        {!previewData && !videoInfo && !isLoadingPreview && !isLoadingInfo ? (
           <Animated.View entering={FadeIn} style={styles.emptyState}>
             <View style={styles.emptyIconWrap}>
               <Feather name="download-cloud" size={40} color={C.textMuted} />
@@ -579,6 +687,12 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, color: C.error, fontSize: 13, fontFamily: "Inter_400Regular" },
   skeletonWrap: { marginBottom: 16 },
+  previewSection: { gap: 12, marginBottom: 4 },
+  getFormatsBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: C.accent, paddingVertical: 15, borderRadius: 14,
+  },
+  getFormatsBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold", flex: 1, textAlign: "center", marginLeft: -26 },
   resultSection: { gap: 16 },
   actionRow: { flexDirection: "row", gap: 10 },
   actionBtn: {
@@ -594,20 +708,17 @@ const styles = StyleSheet.create({
   },
   downloadedBannerText: { flex: 1, color: C.success, fontSize: 13, fontFamily: "Inter_500Medium" },
   shareNowBtn: {
-    backgroundColor: C.success, paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: C.success, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8,
   },
   shareNowText: { color: "#000", fontSize: 12, fontFamily: "Inter_700Bold" },
   toolsSection: { gap: 10 },
   toolsGrid: { flexDirection: "row", gap: 10 },
   toolCard: {
     flex: 1, backgroundColor: C.surfaceElevated, borderRadius: 14,
-    padding: 14, gap: 8, borderWidth: 1, borderColor: C.surfaceBorder,
-    alignItems: "center",
+    padding: 14, gap: 8, borderWidth: 1, borderColor: C.surfaceBorder, alignItems: "center",
   },
   toolIcon: {
-    width: 44, height: 44, borderRadius: 12,
-    alignItems: "center", justifyContent: "center",
+    width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center",
   },
   toolTitle: { color: C.text, fontSize: 13, fontFamily: "Inter_600SemiBold" },
   toolDesc: { color: C.textMuted, fontSize: 11, fontFamily: "Inter_400Regular" },
@@ -624,14 +735,33 @@ const styles = StyleSheet.create({
     borderRadius: 8, borderWidth: 1, borderColor: C.accent,
   },
   copyBtnText: { color: C.accent, fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  outputText: {
-    color: C.textSecondary, fontSize: 14,
-    fontFamily: "Inter_400Regular", lineHeight: 22,
-  },
+  outputText: { color: C.textSecondary, fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 22 },
   sectionLabel: {
     color: C.textSecondary, fontSize: 12, fontFamily: "Inter_600SemiBold",
     letterSpacing: 0.8, textTransform: "uppercase",
   },
+  watermarkBanner: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#1A1000", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: "#3D2A00", gap: 10,
+  },
+  watermarkLeft: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 10,
+  },
+  watermarkTitle: { color: C.gold, fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  watermarkSub: { color: C.textMuted, fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 1 },
+  upgradeBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: C.gold, paddingHorizontal: 10, paddingVertical: 7,
+    borderRadius: 8,
+  },
+  upgradeBtnText: { color: "#000", fontSize: 12, fontFamily: "Inter_700Bold" },
+  cleanBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#0D2A1A", borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: "#1A4A2A",
+  },
+  cleanBannerText: { color: C.success, fontSize: 12, fontFamily: "Inter_500Medium" },
   qualitiesSection: { gap: 10 },
   qualitiesList: { gap: 8 },
   emptyState: { alignItems: "center", paddingTop: 60, gap: 12 },
@@ -646,15 +776,11 @@ const styles = StyleSheet.create({
     textAlign: "center", lineHeight: 22, maxWidth: 280,
   },
   supportedPlatforms: {
-    flexDirection: "row", gap: 8, marginTop: 8,
-    flexWrap: "wrap", justifyContent: "center",
+    flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap", justifyContent: "center",
   },
   platformPill: {
     backgroundColor: C.surfaceElevated, paddingHorizontal: 12, paddingVertical: 5,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  platformPillText: {
-    color: C.textSecondary, fontSize: 11,
-    fontFamily: "Inter_600SemiBold", letterSpacing: 0.5,
-  },
+  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.5 },
 });
