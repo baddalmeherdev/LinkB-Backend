@@ -9,7 +9,7 @@ import * as os from "os";
 const execFileAsync = promisify(execFile);
 const router: IRouter = Router();
 
-const YTDLP = "/home/runner/.local/bin/yt-dlp";
+const YTDLP = "yt-dlp";
 const FFMPEG = "ffmpeg";
 const WATERMARK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 

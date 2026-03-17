@@ -16,7 +16,8 @@ pnpm workspace monorepo using TypeScript. LinkDrop is a mobile-first universal v
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 - **Mobile**: Expo SDK 54, Expo Router (file-based routing)
-- **Video engine**: yt-dlp (server-side)
+- **Video engine**: yt-dlp (system Nix package — `yt-dlp`)
+- **Video processing**: ffmpeg (system Nix package)
 
 ## Structure
 
