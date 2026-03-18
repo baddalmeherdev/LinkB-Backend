@@ -25,7 +25,6 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AdBanner } from "@/components/AdBanner";
 import { LinkPreviewCard, type PreviewData } from "@/components/LinkPreviewCard";
 import { PremiumModal } from "@/components/PremiumModal";
 import { QualityRow } from "@/components/QualityRow";
@@ -598,9 +597,6 @@ export default function DownloadScreen() {
               </View>
             </View>
 
-            {!isPremium ? (
-              <AdBanner onGoPremium={() => setShowPremiumModal(true)} />
-            ) : null}
           </Animated.View>
         ) : null}
 
