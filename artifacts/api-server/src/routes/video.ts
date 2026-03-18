@@ -4,22 +4,13 @@
 // The actual heavy lifting is done by services/ and handlers/.
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { execFile, spawn } from "child_process";
-import { promisify } from "util";
-import * as fs from "fs";
-import { createReadStream } from "fs";
-import * as path from "path";
-import * as os from "os";
+import { spawn } from "child_process";
 import { detectPlatform, validateUrl } from "../services/platform-detect.js";
-import { extractInfo, processQualities, spawnDownload, selfUpdate, getCurrentVersion, YTDLP, FFMPEG } from "../services/extractor.js";
+import { extractInfo, processQualities, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
 import { previewCache, infoCache } from "../services/metadata-cache.js";
-import { downloadQueue } from "../services/download-queue.js";
 import { getHandler } from "../handlers/index.js";
 
-const execFileAsync = promisify(execFile);
 const router: IRouter = Router();
-
-const WATERMARK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
 // ---- Rate Limiting --------------------------------------------------------
 
@@ -70,11 +61,6 @@ function classifyError(msg: string): { status: number; code: string; message: st
   return { status: 500, code: "EXTRACTION_FAILED", message: "Could not fetch video info. Please check the link and try again." };
 }
 
-async function cleanupFiles(...files: string[]): Promise<void> {
-  for (const f of files) {
-    try { await fs.promises.unlink(f); } catch { /* ignore */ }
-  }
-}
 
 // ---- POST /preview --------------------------------------------------------
 // Quick metadata fetch: title, thumbnail, duration.
@@ -191,9 +177,21 @@ router.get("/play", async (req: Request, res: Response) => {
     const handler = getHandler(url);
     const cfg = handler.getConfig();
 
-    // Use a combined audio+video format so there's a single stream the browser can play.
-    // We prefer mp4 and cap at 720p to keep it fast.
-    const format = "best[ext=mp4][height<=720]/best[height<=720][ext=mp4]/best[ext=mp4]/best[height<=480]/best";
+    // We MUST pick a pre-muxed format (acodec!=none AND vcodec!=none in a
+    // single stream). When piping to stdout (-o -) yt-dlp cannot do mp4
+    // muxing because mp4 atoms need seekable output. Selecting a pre-muxed
+    // stream avoids muxing entirely and the bytes can be piped as-is.
+    // Format 18 = YouTube 360p pre-muxed mp4, 22 = 720p pre-muxed mp4.
+    // For Instagram/TikTok they always serve pre-muxed mp4 so any selector works.
+    const format = [
+      "best[acodec!=none][vcodec!=none][height<=480][ext=mp4]",
+      "best[acodec!=none][vcodec!=none][ext=mp4]",
+      "best[acodec!=none][vcodec!=none][height<=480]",
+      "best[acodec!=none][vcodec!=none]",
+      "18", // YouTube 360p pre-muxed fallback
+      "best[height<=360]",
+      "worst",
+    ].join("/");
 
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Cache-Control", "no-cache");
@@ -206,8 +204,7 @@ router.get("/play", async (req: Request, res: Response) => {
       "--buffer-size", "16K",
       ...cfg.extraArgs,
       "-f", format,
-      "--merge-output-format", "mp4",
-      "-o", "-",
+      "-o", "-",           // stdout; no --merge-output-format needed for pre-muxed
       url,
     ], { stdio: ["ignore", "pipe", "pipe"] });
 
@@ -239,8 +236,9 @@ router.get("/play", async (req: Request, res: Response) => {
 
 // ---- GET /stream ----------------------------------------------------------
 // Final download endpoint.
-// Premium users get a direct clean stream.
-// Free users get the video with a watermark applied via ffmpeg.
+// All tiers stream directly — no temp files, no watermark re-encode.
+// The only difference: free users are capped at 720p, premium users get full
+// quality up to 4K. Streaming starts immediately for all users.
 
 router.get("/stream", async (req: Request, res: Response) => {
   const { url, formatId, quality, isPremium, title } = req.query as {
@@ -292,13 +290,8 @@ router.get("/stream", async (req: Request, res: Response) => {
 
   console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
 
-  if (!premiumUser && !isAudioOnly) {
-    await downloadQueue.enqueue(() =>
-      streamWithWatermark({ req, res, url, formatId: ytdlpFormat, extraArgs: cfg.extraArgs })
-    );
-  } else {
-    streamDirect({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs });
-  }
+  // Direct streaming for all users — no temp files, starts immediately.
+  streamDirect({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs });
 });
 
 // ---- GET /update ----------------------------------------------------------
@@ -328,8 +321,6 @@ router.get("/status", async (_req: Request, res: Response) => {
       ytdlpVersion: version,
       previewCacheSize: previewCache.size,
       infoCacheSize: infoCache.size,
-      queueActive: downloadQueue.activeCount,
-      queuePending: downloadQueue.pendingCount,
     });
   } catch {
     res.json({ status: "ok", ytdlpVersion: "unknown" });
@@ -337,75 +328,6 @@ router.get("/status", async (_req: Request, res: Response) => {
 });
 
 // ---- Streaming helpers ----------------------------------------------------
-
-async function streamWithWatermark(opts: {
-  req: Request;
-  res: Response;
-  url: string;
-  formatId: string;
-  extraArgs: string[];
-}): Promise<void> {
-  const { res, url, formatId, extraArgs } = opts;
-  const tmpId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  const tmpIn = path.join(os.tmpdir(), `ld_in_${tmpId}.mp4`);
-  const tmpOut = path.join(os.tmpdir(), `ld_out_${tmpId}.mp4`);
-
-  try {
-    console.log(`[watermark] Downloading: ${url}`);
-    await execFileAsync(YTDLP, [
-      "--no-warnings", "--no-playlist",
-      "--no-check-certificate",
-      "--concurrent-fragments", "4",
-      "--buffer-size", "16K",
-      ...extraArgs,
-      "-f", formatId,
-      "--merge-output-format", "mp4",
-      "-o", tmpIn,
-      url,
-    ], { timeout: 300000 });
-
-    console.log(`[watermark] Applying watermark`);
-    const drawtext = [
-      `text='LinkDrop'`,
-      `fontfile=${WATERMARK_FONT}`,
-      `fontsize=36`,
-      `fontcolor=white@0.70`,
-      `bordercolor=black@0.80`,
-      `borderw=3`,
-      `x=w-tw-20`,
-      `y=h-th-20`,
-    ].join(":");
-
-    await execFileAsync(FFMPEG, [
-      "-i", tmpIn,
-      "-vf", `drawtext=${drawtext}`,
-      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
-      "-c:a", "aac", "-b:a", "128k",
-      "-movflags", "+faststart",
-      "-y", tmpOut,
-    ], { timeout: 600000 });
-
-    const stat = await fs.promises.stat(tmpOut);
-    res.setHeader("Content-Length", String(stat.size));
-
-    const readStream = createReadStream(tmpOut);
-    const cleanup = () => cleanupFiles(tmpIn, tmpOut);
-    res.on("finish", cleanup);
-    res.on("close", cleanup);
-    readStream.on("error", (err) => {
-      console.error("[watermark] stream error:", err);
-      if (!res.headersSent) res.status(500).json({ error: "STREAM_ERROR", message: "Failed to stream video." });
-      cleanup();
-    });
-    readStream.pipe(res);
-  } catch (err) {
-    console.error("[watermark] error:", err);
-    cleanupFiles(tmpIn, tmpOut);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "WATERMARK_ERROR", message: "Failed to process video. Please try again." });
-    }
-  }
-}
 
 function streamDirect(opts: {
   req: Request;

@@ -453,12 +453,13 @@ export default function DownloadScreen() {
       setVideoPlayerError(false);
       setVideoPlayerLoading(true);
       setVideoModalUrl(getPlayUrl(videoUrl));
-      // Timeout: if video hasn't started in 20s, show error
+      // Timeout: yt-dlp needs ~15s to negotiate the stream; give it 45s before
+      // showing the error state.
       if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
       videoLoadTimerRef.current = setTimeout(() => {
         setVideoPlayerError(true);
         setVideoPlayerLoading(false);
-      }, 20000);
+      }, 45000);
     } else {
       await WebBrowser.openBrowserAsync(videoUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
@@ -732,10 +733,10 @@ export default function DownloadScreen() {
               {!isPremium ? (
                 <Animated.View entering={FadeIn} style={styles.watermarkBanner}>
                   <View style={styles.watermarkLeft}>
-                    <MaterialCommunityIcons name="watermark" size={16} color={C.gold} />
+                    <MaterialCommunityIcons name="crown-outline" size={16} color={C.gold} />
                     <View>
-                      <Text style={styles.watermarkTitle}>Free downloads include a watermark</Text>
-                      <Text style={styles.watermarkSub}>Upgrade to get clean, watermark-free videos</Text>
+                      <Text style={styles.watermarkTitle}>Free plan: up to 720p</Text>
+                      <Text style={styles.watermarkSub}>Upgrade for 1080p, 4K and highest quality</Text>
                     </View>
                   </View>
                   <Pressable style={styles.upgradeBtn} onPress={() => setShowPremiumModal(true)}>
@@ -746,7 +747,7 @@ export default function DownloadScreen() {
               ) : (
                 <Animated.View entering={FadeIn} style={styles.cleanBanner}>
                   <Feather name="check-circle" size={14} color={C.success} />
-                  <Text style={styles.cleanBannerText}>Premium — no watermark on your downloads</Text>
+                  <Text style={styles.cleanBannerText}>Premium — full quality, all resolutions</Text>
                 </Animated.View>
               )}
 
