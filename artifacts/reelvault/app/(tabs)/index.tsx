@@ -1,13 +1,13 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Sharing from "expo-sharing";
+import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -94,13 +94,12 @@ export default function DownloadScreen() {
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
-  const [downloadingForShare, setDownloadingForShare] = useState(false);
   const [lastDownloadedQuality, setLastDownloadedQuality] = useState<VideoQuality | null>(null);
-  const webBlobRef = React.useRef<{ blob: Blob; filename: string } | null>(null);
   const [captionText, setCaptionText] = useState<string | null>(null);
   const [hashtagText, setHashtagText] = useState<string | null>(null);
   const [showCaptions, setShowCaptions] = useState(false);
   const [showHashtags, setShowHashtags] = useState(false);
+  const [videoModalUrl, setVideoModalUrl] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,11 +117,11 @@ export default function DownloadScreen() {
     setVideoInfo(null);
     setDownloadedUri(null);
     setLastDownloadedQuality(null);
-    webBlobRef.current = null;
     setCaptionText(null);
     setHashtagText(null);
     setShowCaptions(false);
     setShowHashtags(false);
+    setVideoModalUrl(null);
   };
 
   const handleUrlChange = (text: string) => {
@@ -219,39 +218,16 @@ export default function DownloadScreen() {
     setLastDownloadedQuality(quality);
 
     if (Platform.OS === "web") {
-      try {
-        const response = await fetch(streamUrl);
-        if (!response.ok) throw new Error("Download failed");
-        const blob = await response.blob();
-        webBlobRef.current = { blob, filename };
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-        setDownloadedUri(blobUrl);
-      } catch {
-        Alert.alert("Download Failed", "Could not download the video. Please try again.");
-      }
+      const a = document.createElement("a");
+      a.href = streamUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setDownloadedUri(streamUrl);
     } else {
-      try {
-        const localUri = FileSystem.cacheDirectory + filename;
-        const dl = FileSystem.createDownloadResumable(streamUrl, localUri, {});
-        const result = await dl.downloadAsync();
-        if (result?.uri) {
-          setDownloadedUri(result.uri);
-          Alert.alert(
-            "Download Complete!",
-            `"${videoInfo.title}" has been saved.\n\nTap the Share button to share it.`,
-            [{ text: "OK" }]
-          );
-        }
-      } catch {
-        await Linking.openURL(streamUrl);
-      }
+      await Linking.openURL(streamUrl);
+      setDownloadedUri(streamUrl);
     }
   };
 
@@ -259,95 +235,26 @@ export default function DownloadScreen() {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+    const quality = lastDownloadedQuality ?? videoInfo.qualities.find(
+      (q) => !["720p", "1080p", "2160p"].includes(q.quality) && !q.isAudioOnly
+    ) ?? videoInfo.qualities[0];
+
+    if (!quality) return;
+
+    const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+    const ext = quality.isAudioOnly ? "mp3" : "mp4";
+    const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 60);
+    const filename = `${safeTitle}_${quality.quality}.${ext}`;
+
     if (Platform.OS === "web") {
-      const cached = webBlobRef.current;
-      if (cached) {
-        const file = new File([cached.blob], cached.filename, { type: cached.blob.type });
-        const canShareFile = (navigator as { canShare?: (d: object) => boolean }).canShare?.({ files: [file] });
-        if (canShareFile && navigator.share) {
-          try {
-            await navigator.share({ title: videoInfo.title, files: [file] });
-            return;
-          } catch {}
-        }
-        const blobUrl = URL.createObjectURL(cached.blob);
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = cached.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-        Alert.alert("Video Saved!", "Your video has been saved to the Downloads folder.");
-        return;
-      }
-
-      const quality = lastDownloadedQuality ?? videoInfo.qualities.find(
-        (q) => !["720p", "1080p", "2160p"].includes(q.quality) && !q.isAudioOnly
-      ) ?? videoInfo.qualities[0];
-
-      if (!quality) return;
-
-      const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
-      const ext = quality.isAudioOnly ? "mp3" : "mp4";
-      const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 60);
-      const filename = `${safeTitle}_${quality.quality}.${ext}`;
-
-      setDownloadingForShare(true);
-      try {
-        const response = await fetch(streamUrl);
-        if (!response.ok) throw new Error("Failed");
-        const blob = await response.blob();
-        webBlobRef.current = { blob, filename };
-        const file = new File([blob], filename, { type: blob.type });
-        const canShareFile = (navigator as { canShare?: (d: object) => boolean }).canShare?.({ files: [file] });
-        if (canShareFile && navigator.share) {
-          await navigator.share({ title: videoInfo.title, files: [file] });
-        } else {
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = blobUrl;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-          Alert.alert("Video Saved!", "Your video has been saved to the Downloads folder.");
-        }
-      } catch {
-        Alert.alert("Share Failed", "Could not share the video. Please try downloading first.");
-      } finally {
-        setDownloadingForShare(false);
-      }
-      return;
-    }
-
-    if (downloadedUri) {
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(downloadedUri, {
-          mimeType: downloadedUri.endsWith(".mp3") ? "audio/mpeg" : "video/mp4",
-          dialogTitle: videoInfo.title,
-        });
-      }
+      const a = document.createElement("a");
+      a.href = streamUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } else {
-      Alert.alert(
-        "Video Not Downloaded",
-        "Download the video first before sharing.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Download",
-            onPress: async () => {
-              if (!videoInfo.qualities.length) return;
-              const best = videoInfo.qualities.find(
-                (q) => !["720p", "1080p", "2160p"].includes(q.quality) && !q.isAudioOnly
-              ) ?? videoInfo.qualities[0];
-              await handleDownload(best);
-            },
-          },
-        ]
-      );
+      await Linking.openURL(streamUrl);
     }
   };
 
@@ -383,6 +290,21 @@ export default function DownloadScreen() {
     await Clipboard.setStringAsync(hashtagText);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert("Copied!", "Hashtags copied to clipboard.");
+  };
+
+  const getYouTubeEmbedUrl = (videoUrl: string): string | null => {
+    const ytMatch = videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`;
+    return null;
+  };
+
+  const handlePlay = async (videoUrl: string) => {
+    if (Platform.OS === "web") {
+      const embedUrl = getYouTubeEmbedUrl(videoUrl) ?? videoUrl;
+      setVideoModalUrl(embedUrl);
+    } else {
+      await WebBrowser.openBrowserAsync(videoUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN });
+    }
   };
 
   const handleTrim = () => {
@@ -508,7 +430,7 @@ export default function DownloadScreen() {
             <LinkPreviewCard
               preview={previewData}
               isLoading={isLoadingPreview}
-              onPlay={() => Linking.openURL(url.trim())}
+              onPlay={() => handlePlay(url.trim())}
             />
 
             <Pressable
@@ -535,9 +457,8 @@ export default function DownloadScreen() {
 
             <View style={styles.actionRow}>
               <Pressable
-                style={[styles.actionBtn, downloadingForShare && styles.fetchBtnDisabled]}
+                style={styles.actionBtn}
                 onPress={handleShare}
-                disabled={downloadingForShare}
               >
                 <Feather
                   name="share-2"
@@ -545,7 +466,7 @@ export default function DownloadScreen() {
                   color={downloadedUri ? C.success : C.accent}
                 />
                 <Text style={[styles.actionBtnText, downloadedUri ? { color: C.success } : {}]}>
-                  {downloadingForShare ? "Preparing..." : downloadedUri ? "Share Video" : "Share"}
+                  {downloadedUri ? "Share Video" : "Share"}
                 </Text>
               </Pressable>
               <Pressable
@@ -703,6 +624,35 @@ export default function DownloadScreen() {
       </ScrollView>
 
       <PremiumModal visible={showPremiumModal} onClose={() => setShowPremiumModal(false)} />
+
+      {Platform.OS === "web" && videoModalUrl ? (
+        <Modal
+          visible={!!videoModalUrl}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setVideoModalUrl(null)}
+        >
+          <View style={styles.videoModalOverlay}>
+            <View style={styles.videoModalContainer}>
+              <View style={styles.videoModalHeader}>
+                <Text style={styles.videoModalTitle} numberOfLines={1}>
+                  {previewData?.title ?? "Video Preview"}
+                </Text>
+                <Pressable onPress={() => setVideoModalUrl(null)} style={styles.videoModalClose}>
+                  <Feather name="x" size={20} color="#fff" />
+                </Pressable>
+              </View>
+              {/* @ts-ignore - web only iframe */}
+              <iframe
+                src={videoModalUrl}
+                style={{ width: "100%", height: "100%", border: "none", borderRadius: 0 }}
+                allow="autoplay; fullscreen; encrypted-media"
+                allowFullScreen
+              />
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -862,4 +812,29 @@ const styles = StyleSheet.create({
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
   platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.5 },
+  videoModalOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center", justifyContent: "center",
+  },
+  videoModalContainer: {
+    width: "92%", maxWidth: 800,
+    height: 480, backgroundColor: "#000",
+    borderRadius: 16, overflow: "hidden",
+    borderWidth: 1, borderColor: C.surfaceBorder,
+  },
+  videoModalHeader: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: C.surfaceElevated,
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  videoModalTitle: {
+    flex: 1, color: C.text, fontSize: 14,
+    fontFamily: "Inter_600SemiBold", marginRight: 12,
+  },
+  videoModalClose: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    alignItems: "center", justifyContent: "center",
+  },
 });
