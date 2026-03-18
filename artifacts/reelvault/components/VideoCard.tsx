@@ -62,12 +62,6 @@ export function VideoCard({ info, onPlay }: Props) {
           </View>
         ) : null}
 
-        {onPlay ? (
-          <View style={styles.previewHint}>
-            <Feather name="play-circle" size={11} color={C.accent} />
-            <Text style={styles.previewHintText}>Tap to preview</Text>
-          </View>
-        ) : null}
       </Pressable>
 
       <View style={styles.info}>
@@ -149,26 +143,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 12,
     fontFamily: "Inter_500Medium",
-  },
-  previewHint: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    backgroundColor: "rgba(0,0,0,0.60)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderWidth: 1,
-    borderColor: C.accent + "55",
-  },
-  previewHintText: {
-    color: C.accent,
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.4,
   },
   info: {
     padding: 14,

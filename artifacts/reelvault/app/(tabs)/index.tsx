@@ -88,6 +88,7 @@ export default function DownloadScreen() {
     fetchPreview,
     fetchVideoInfo,
     getStreamUrl,
+    getDirectDownloadUrl,
     isLoadingPreview,
     isLoadingInfo,
     isSlowRequest,
@@ -245,10 +246,9 @@ export default function DownloadScreen() {
 
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
     const ext = quality.isAudioOnly ? "mp3" : "mp4";
     const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 60);
-    const filename = `${safeTitle}_${quality.quality}.${ext}`;
+    const fallbackFilename = `${safeTitle}_${quality.quality}.${ext}`;
 
     await addToHistory({
       title: videoInfo.title,
@@ -256,7 +256,7 @@ export default function DownloadScreen() {
       platform: videoInfo.platform,
       quality: quality.quality,
       url: videoInfo.originalUrl,
-      filename,
+      filename: fallbackFilename,
     });
 
     setLastDownloadedQuality(quality);
@@ -265,13 +265,41 @@ export default function DownloadScreen() {
     setDownloadPhase("preparing");
     setNativeFileUri(null);
 
+    // --- Fast path: resolve direct CDN URL (no server-side download) ---
+    // This resolves the direct download URL in ~3-8s and lets the
+    // device download directly from the CDN at full speed.
+    const direct = await getDirectDownloadUrl(
+      videoInfo.originalUrl, quality, videoInfo.title, isPremium
+    );
+
+    const downloadUrl = direct?.directUrl ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+    const filename = direct?.filename ?? fallbackFilename;
+
     if (Platform.OS === "web") {
       try {
         const controller = new AbortController();
         downloadAbortRef.current = controller;
 
         setDownloadPhase("downloading");
-        const response = await fetch(streamUrl, { signal: controller.signal });
+
+        // For direct CDN URLs, trigger a browser download via anchor tag
+        if (direct?.directUrl) {
+          setDownloadProgress(0.5);
+          const a = document.createElement("a");
+          a.href = direct.directUrl;
+          a.download = filename;
+          a.target = "_blank";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setDownloadProgress(1);
+          setDownloadPhase("done");
+          setDownloadedUri(direct.directUrl);
+          return;
+        }
+
+        // Fallback: stream through server
+        const response = await fetch(downloadUrl, { signal: controller.signal });
         if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
         const contentLength = Number(response.headers.get("content-length")) || 0;
@@ -279,7 +307,6 @@ export default function DownloadScreen() {
         const chunks: Uint8Array[] = [];
         let received = 0;
 
-        // Animate progress smoothly
         let fakeProgress = 0;
         const fakeTimer = setInterval(() => {
           fakeProgress = Math.min(fakeProgress + 0.012, 0.85);
@@ -324,7 +351,7 @@ export default function DownloadScreen() {
       try {
         const destPath = `${FileSystem.documentDirectory}${filename}`;
         const downloadResumable = FileSystem.createDownloadResumable(
-          streamUrl,
+          downloadUrl,
           destPath,
           {},
           (progress) => {
@@ -332,7 +359,6 @@ export default function DownloadScreen() {
             if (totalBytesExpectedToWrite > 0) {
               setDownloadProgress(totalBytesWritten / totalBytesExpectedToWrite);
             } else {
-              // No content-length: smooth fake progress
               setDownloadProgress((p) => Math.min(p + 0.015, 0.88));
             }
             setDownloadPhase("downloading");
@@ -353,8 +379,8 @@ export default function DownloadScreen() {
       } catch (e: any) {
         if (!String(e).includes("cancel")) {
           // Fallback: open in browser
-          await Linking.openURL(streamUrl);
-          setDownloadedUri(streamUrl);
+          await Linking.openURL(downloadUrl);
+          setDownloadedUri(downloadUrl);
           setDownloadPhase("done");
         } else {
           setDownloadPhase("");

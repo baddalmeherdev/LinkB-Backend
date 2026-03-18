@@ -124,16 +124,14 @@ export function LinkPreviewCard({ preview, isLoading, onPlay }: Props) {
           {preview.title}
         </Text>
         {onPlay ? (
-          <Pressable style={styles.playTextRow} onPress={onPlay}>
-            <View style={styles.playTextIcon}>
-              <Feather name="play" size={10} color="#fff" />
-            </View>
-            <Text style={styles.playTextLabel}>Tap thumbnail to watch</Text>
-          </Pressable>
+          <View style={styles.readyRow}>
+            <View style={[styles.readyDot, { backgroundColor: C.accent }]} />
+            <Text style={[styles.readyText, { color: C.accent }]}>Tap thumbnail to preview</Text>
+          </View>
         ) : (
           <View style={styles.readyRow}>
             <View style={styles.readyDot} />
-            <Text style={styles.readyText}>Ready to download</Text>
+            <Text style={styles.readyText}>Fetching formats…</Text>
           </View>
         )}
       </View>

@@ -313,6 +313,94 @@ router.get("/stream", async (req: Request, res: Response) => {
   });
 });
 
+// ---- GET /direct ----------------------------------------------------------
+// Resolves the direct CDN download URL using yt-dlp --get-url.
+// Returns { directUrl, filename } — client downloads directly from CDN.
+// This avoids server-side video download entirely, making it near-instant.
+
+router.get("/direct", async (req: Request, res: Response) => {
+  const { url, formatId, quality, isPremium, title } = req.query as {
+    url?: string; formatId?: string; quality?: string;
+    isPremium?: string; title?: string;
+  };
+
+  if (!url || !formatId) {
+    res.status(400).json({ error: "INVALID_REQUEST", message: "url and formatId are required." });
+    return;
+  }
+  if (!validateUrl(url)) {
+    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL." });
+    return;
+  }
+
+  const premiumUser = isPremium === "true";
+  const isHdFormat = ["1080p", "1440p", "2160p"].includes(quality ?? "");
+  if (isHdFormat && !premiumUser) {
+    res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require Premium." });
+    return;
+  }
+
+  const isAudioOnly = quality === "Audio Only" || formatId === "bestaudio";
+  const ext = isAudioOnly ? "mp3" : "mp4";
+  const safeTitle = (title ?? "video").replace(/[^a-zA-Z0-9_\- ]/g, "_").substring(0, 80);
+  const filename = `${safeTitle}.${ext}`;
+
+  const handler = getHandler(url);
+  const cfg = handler.getConfig();
+
+  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
+  const ytdlpFormat = cfg.downloadFormatOverride
+    ? cfg.downloadFormatOverride(formatId, isAudioOnly)
+    : isFullSelector
+      ? formatId
+      : isAudioOnly
+        ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
+        : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+
+  console.log(`[direct] handler=${handler.name} format=${ytdlpFormat}`);
+
+  const { result, errInfo, usedHeartbeat } = await withHeartbeat(
+    res,
+    (async () => {
+      const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+        const proc = spawn(YTDLP, [
+          ...BASE_YTDLP_ARGS,
+          ...cfg.extraArgs,
+          "-f", ytdlpFormat,
+          "--get-url",
+          url,
+        ], { stdio: ["ignore", "pipe", "pipe"] });
+
+        let out = "";
+        proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+        proc.stderr.on("data", (d: Buffer) => {
+          const line = d.toString().trim();
+          if (line && !line.startsWith("[debug]")) console.log("[direct-yt-dlp]", line);
+        });
+        proc.on("error", reject);
+        proc.on("close", (code) => {
+          if (code === 0) resolve({ stdout: out });
+          else reject(new Error(`yt-dlp exited ${code}`));
+        });
+      });
+
+      const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
+      if (!lines[0]) throw new Error("No direct URL resolved.");
+
+      return { directUrl: lines[0], filename };
+    })(),
+  );
+
+  if (errInfo) {
+    console.error("[direct] error:", errInfo.code);
+    endHeartbeat(res, usedHeartbeat, { error: errInfo.code, message: errInfo.message }, errInfo.status);
+    return;
+  }
+
+  console.log(`[direct] resolved OK`);
+  endHeartbeat(res, usedHeartbeat, result!);
+});
+
 // ---- GET /update ----------------------------------------------------------
 // Triggers yt-dlp self-update. Run periodically to keep extractors current.
 

@@ -188,6 +188,46 @@ export function useVideoApi() {
     return `${BASE_URL}/api/video/stream?${params.toString()}`;
   };
 
+  // Resolves the direct CDN download URL (fast path — no server-side download).
+  // Falls back to null if unsupported (caller should fall back to /stream).
+  const getDirectDownloadUrl = async (
+    videoUrl: string,
+    quality: VideoQuality,
+    title: string,
+    isPremium: boolean
+  ): Promise<{ directUrl: string; filename: string } | null> => {
+    try {
+      const params = new URLSearchParams({
+        url: videoUrl,
+        formatId: quality.formatId,
+        quality: quality.quality,
+        isPremium: String(isPremium),
+        title,
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+      const res = await fetch(`${BASE_URL}/api/video/direct?${params.toString()}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const text = await res.text();
+      const data = JSON.parse(text.trim()) as Record<string, unknown>;
+
+      if (typeof data.directUrl === "string" && data.directUrl.startsWith("http")) {
+        return {
+          directUrl: data.directUrl as string,
+          filename: (data.filename as string) ?? `video_${quality.quality}.mp4`,
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const clearError = () => setError(null);
 
   return {
@@ -195,6 +235,7 @@ export function useVideoApi() {
     fetchVideoInfo,
     getPlayUrl,
     getStreamUrl,
+    getDirectDownloadUrl,
     isLoadingPreview,
     isLoadingInfo,
     isSlowRequest,
