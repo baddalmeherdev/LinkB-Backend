@@ -26,6 +26,7 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
 ];
 
 // ---- Types ----------------------------------------------------------------
@@ -65,6 +66,22 @@ export interface QualityOption {
   isHD: boolean;
 }
 
+// ---- Fatal error detection ------------------------------------------------
+
+function isFatalError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("unsupported url") ||
+    m.includes("no such extractor") ||
+    m.includes("video is private") ||
+    m.includes("this video is unavailable") ||
+    m.includes("video unavailable") ||
+    m.includes("this video has been removed") ||
+    m.includes("account has been terminated") ||
+    m.includes("enoent")
+  );
+}
+
 // ---- Core Extraction ------------------------------------------------------
 
 export async function extractInfo(url: string, handler?: HandlerConfig): Promise<ExtractedInfo> {
@@ -93,23 +110,110 @@ export async function extractInfo(url: string, handler?: HandlerConfig): Promise
       };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      const msg = lastError.message.toLowerCase();
-
-      // Fatal errors — no point retrying with a different user-agent.
-      // Keep these specific so format-level errors ("Requested format is not
-      // available") don't abort the whole retry chain.
-      if (
-        msg.includes("unsupported url") ||
-        msg.includes("video is private") ||
-        msg.includes("this video is unavailable") ||
-        msg.includes("video unavailable") ||
-        msg.includes("this video has been removed") ||
-        msg.includes("account has been terminated") ||
-        msg.includes("enoent")
-      ) {
-        throw lastError;
-      }
+      if (isFatalError(lastError.message)) throw lastError;
       // Otherwise retry with next user agent
+    }
+  }
+
+  throw lastError;
+}
+
+// ---- Robust Extraction (test engine) --------------------------------------
+// Tries progressively more permissive strategies before giving up.
+// Returns the info plus metadata about how many retries it took.
+
+export interface RobustResult {
+  info: ExtractedInfo;
+  strategy: string;
+  retries: number;
+}
+
+// Platform-specific fallback arg sets tried in order after the primary handler fails.
+const PLATFORM_FALLBACKS: Record<string, Array<{ name: string; extraArgs: string[] }>> = {
+  tiktok: [
+    {
+      name: "tiktok-mobile-ua",
+      extraArgs: [
+        "--extractor-args", "tiktok:webpage_download=1",
+        "--add-header", "Referer:https://www.tiktok.com/",
+        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      ],
+    },
+    {
+      name: "tiktok-embed",
+      extraArgs: [
+        "--extractor-args", "tiktok:webpage_download=1",
+      ],
+    },
+    { name: "tiktok-bare", extraArgs: [] },
+  ],
+  instagram: [
+    {
+      name: "instagram-embed",
+      extraArgs: [
+        "--add-header", "Referer:https://www.instagram.com/",
+      ],
+    },
+    { name: "instagram-bare", extraArgs: [] },
+  ],
+};
+
+// Generic fallback strategies applied to all platforms when platform-specific fails
+const GENERIC_FALLBACKS: Array<{ name: string; extraArgs: string[] }> = [
+  { name: "generic-best", extraArgs: [] },
+  { name: "generic-worst", extraArgs: ["--format-sort", "+size"] },
+];
+
+function getPlatformKey(url: string): string {
+  if (/tiktok\.com|vm\.tiktok\.com/.test(url)) return "tiktok";
+  if (/instagram\.com/.test(url)) return "instagram";
+  if (/twitter\.com|x\.com/.test(url)) return "twitter";
+  if (/facebook\.com|fb\.watch/.test(url)) return "facebook";
+  return "generic";
+}
+
+export async function extractInfoRobust(
+  url: string,
+  handler: HandlerConfig,
+): Promise<RobustResult> {
+  let retries = 0;
+  let lastError: Error = new Error("Extraction failed");
+
+  // Strategy 1: Primary handler (already retries across 3 user-agents)
+  try {
+    const info = await extractInfo(url, handler);
+    return { info, strategy: "primary", retries };
+  } catch (err) {
+    lastError = err instanceof Error ? err : new Error(String(err));
+    if (isFatalError(lastError.message)) throw lastError;
+  }
+
+  retries++;
+
+  // Strategy 2: Platform-specific fallbacks
+  const platformKey = getPlatformKey(url);
+  const platformFallbacks = PLATFORM_FALLBACKS[platformKey] ?? [];
+
+  for (const fallback of platformFallbacks) {
+    try {
+      const info = await extractInfo(url, { extraArgs: fallback.extraArgs });
+      return { info, strategy: fallback.name, retries };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (isFatalError(lastError.message)) throw lastError;
+      retries++;
+    }
+  }
+
+  // Strategy 3: Generic fallbacks (bestvideo+bestaudio → best → worst format chains)
+  for (const fallback of GENERIC_FALLBACKS) {
+    try {
+      const info = await extractInfo(url, { extraArgs: fallback.extraArgs });
+      return { info, strategy: fallback.name, retries };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (isFatalError(lastError.message)) throw lastError;
+      retries++;
     }
   }
 
@@ -188,8 +292,6 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
   const hasTrueHD = qualities.some((q) => !q.isAudioOnly && q.isHD);
   const hasFree720 = qualities.some((q) => !q.isAudioOnly && !q.isHD && parseInt(q.quality) >= 720);
   if (!hasFree720 || hasTrueHD) {
-    // Insert a yt-dlp-selector based "720p" option that picks the best
-    // combined audio+video stream at or below 720p.
     const sentinel: QualityOption = {
       formatId: "bestvideo[height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]",
       quality: "720p",
@@ -200,7 +302,6 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
       isAudioOnly: false,
       isHD: false,
     };
-    // Only add if we don't already have a "720p" entry
     if (!qualities.some((q) => q.quality === "720p")) {
       qualities.push(sentinel);
     }
@@ -296,7 +397,7 @@ export function spawnDownload(opts: {
 // ---- Self-update ----------------------------------------------------------
 
 export async function selfUpdate(): Promise<string> {
-  const { stdout, stderr } = await execFileAsync(YTDLP, ["--update"], { timeout: 60000 });
+  const { stdout, stderr } = await execFileAsync(YTDLP, ["-U"], { timeout: 120000 });
   return (stdout + stderr).trim();
 }
 

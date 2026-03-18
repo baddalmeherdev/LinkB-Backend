@@ -6,7 +6,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { spawn } from "child_process";
 import { detectPlatform, validateUrl } from "../services/platform-detect.js";
-import { extractInfo, processQualities, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
+import { extractInfo, extractInfoRobust, processQualities, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
 import { previewCache, infoCache } from "../services/metadata-cache.js";
 import { getHandler } from "../handlers/index.js";
 
@@ -453,15 +453,19 @@ function streamDirect(opts: {
 }
 
 // ---- POST /test -----------------------------------------------------------
-// Internal test engine. Tests a batch of URLs for metadata, formats, and
-// download availability. Returns structured results with timing & retry info.
+// Internal test engine. Tests URLs one at a time using extractInfoRobust
+// (3-strategy fallback chain). Returns structured results with timing, retry
+// info, and per-step failure attribution.
 
 interface TestResult {
   url: string;
   category: string;
   status: "pass" | "fail" | "unsupported" | "invalid";
+  // Which step failed: "metadata" | "formats" | null (null = passed or invalid)
+  failedStep: "metadata" | "formats" | null;
   errorCode: string | null;
   errorMessage: string | null;
+  strategyUsed: string | null;
   title: string | null;
   thumbnail: string | null;
   hasDuration: boolean;
@@ -473,14 +477,11 @@ interface TestResult {
   totalMs: number;
 }
 
-const FALLBACK_FORMATS = [
-  "best[ext=mp4]/best",
-  "worst[ext=mp4]/worst",
-  "best",
-];
-
 router.post("/test", async (req: Request, res: Response) => {
-  const { urls } = req.body as { urls?: Array<{ url: string; category: string }> };
+  const { urls, autoUpdate } = req.body as {
+    urls?: Array<{ url: string; category: string }>;
+    autoUpdate?: boolean;
+  };
 
   if (!urls || !Array.isArray(urls)) {
     res.status(400).json({ error: "INVALID_REQUEST", message: "urls array is required." });
@@ -490,6 +491,25 @@ router.post("/test", async (req: Request, res: Response) => {
   const results: TestResult[] = [];
   const logs: string[] = [];
   const startAll = Date.now();
+  let ytdlpVersion = "unknown";
+
+  // Optional: self-update yt-dlp before running the suite
+  if (autoUpdate) {
+    try {
+      logs.push("[update] Running yt-dlp -U...");
+      const updateOut = await selfUpdate();
+      ytdlpVersion = await getCurrentVersion();
+      logs.push(`[update] Done — ${ytdlpVersion}. Output: ${updateOut.slice(0, 120)}`);
+    } catch (e) {
+      logs.push(`[update] Warning: self-update failed — ${e instanceof Error ? e.message.slice(0, 80) : e}`);
+    }
+  }
+
+  // Always log current version
+  try {
+    ytdlpVersion = await getCurrentVersion();
+    logs.push(`[info] yt-dlp version: ${ytdlpVersion}`);
+  } catch { /* ignore */ }
 
   for (const item of urls.slice(0, 20)) {
     const { url, category } = item;
@@ -498,8 +518,10 @@ router.post("/test", async (req: Request, res: Response) => {
       url,
       category,
       status: "fail",
+      failedStep: "metadata",
       errorCode: null,
       errorMessage: null,
+      strategyUsed: null,
       title: null,
       thumbnail: null,
       hasDuration: false,
@@ -514,6 +536,7 @@ router.post("/test", async (req: Request, res: Response) => {
     // --- Step 1: validate URL
     if (!validateUrl(url)) {
       result.status = "invalid";
+      result.failedStep = null;
       result.errorCode = "INVALID_URL";
       result.errorMessage = "Not a valid HTTP/HTTPS URL.";
       result.totalMs = Date.now() - t0;
@@ -522,38 +545,30 @@ router.post("/test", async (req: Request, res: Response) => {
       continue;
     }
 
-    // --- Step 2: fetch metadata with retries
+    // --- Step 2: fetch metadata using robust 3-strategy fallback
     const metaStart = Date.now();
     let info: import("../services/extractor.js").ExtractedInfo | null = null;
-    let retries = 0;
 
     try {
       const handler = getHandler(url);
-      try {
-        info = await extractInfo(url, handler.getConfig());
-      } catch (firstErr) {
-        retries++;
-        result.retryAttempts++;
-        logs.push(`[${category}] Retry 1 for ${url}: ${firstErr instanceof Error ? firstErr.message.slice(0, 80) : firstErr}`);
-        // Retry with no extra handler args as fallback
-        try {
-          info = await extractInfo(url, { extraArgs: [], name: "fallback" });
-        } catch (secondErr) {
-          retries++;
-          result.retryAttempts++;
-          logs.push(`[${category}] Retry 2 for ${url}: ${secondErr instanceof Error ? secondErr.message.slice(0, 80) : secondErr}`);
-          throw secondErr;
-        }
+      logs.push(`[${category}] Testing ${url} (handler: ${handler.name})`);
+      const robust = await extractInfoRobust(url, handler.getConfig());
+      info = robust.info;
+      result.retryAttempts = robust.retries;
+      result.strategyUsed = robust.strategy;
+      if (robust.retries > 0) {
+        logs.push(`[${category}] Recovered after ${robust.retries} retry/retries using strategy: ${robust.strategy}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const classified = classifyError(msg);
       result.status = classified.code === "UNSUPPORTED_URL" ? "unsupported" : "fail";
+      result.failedStep = "metadata";
       result.errorCode = classified.code;
       result.errorMessage = classified.message;
       result.metadataMs = Date.now() - metaStart;
       result.totalMs = Date.now() - t0;
-      logs.push(`[${category}] FAIL ${url} => ${classified.code}: ${classified.message}`);
+      logs.push(`[${category}] FAIL metadata ${url} => ${classified.code}`);
       results.push(result);
       continue;
     }
@@ -572,18 +587,12 @@ router.post("/test", async (req: Request, res: Response) => {
       const videoQualities = qualities.filter((q) => !q.isAudioOnly);
       result.formatsAvailable = videoQualities.length;
 
-      // Check if at least one format selector seems valid (non-empty formatId)
+      // Pass if any non-empty formatId exists
       downloadable = videoQualities.some((q) => q.formatId.length > 0);
 
-      // If no explicit formats, try a yt-dlp format fallback check
-      if (!downloadable) {
-        for (const fallback of FALLBACK_FORMATS) {
-          if (info.formats.length === 0 && info.originalUrl) {
-            // Direct URL site — treat as downloadable
-            downloadable = true;
-            break;
-          }
-        }
+      // Direct-URL sites (no formats array) are inherently downloadable
+      if (!downloadable && info.formats.length === 0 && info.originalUrl) {
+        downloadable = true;
       }
     } catch {
       downloadable = false;
@@ -595,17 +604,20 @@ router.post("/test", async (req: Request, res: Response) => {
 
     if (result.title && result.downloadable) {
       result.status = "pass";
+      result.failedStep = null;
       logs.push(`[${category}] PASS ${url} — "${result.title}" (${result.formatsAvailable} formats, ${result.totalMs}ms)`);
     } else if (result.title) {
       result.status = "fail";
+      result.failedStep = "formats";
       result.errorCode = "NO_FORMATS";
-      result.errorMessage = "Metadata loaded but no downloadable formats found.";
-      logs.push(`[${category}] NO_FORMATS ${url} — "${result.title}"`);
+      result.errorMessage = "Metadata loaded but no downloadable formats found. May be geo-restricted or DRM-protected.";
+      logs.push(`[${category}] FAIL formats ${url} — "${result.title}"`);
     } else {
       result.status = "fail";
+      result.failedStep = "metadata";
       result.errorCode = "NO_METADATA";
-      result.errorMessage = "Could not retrieve video metadata.";
-      logs.push(`[${category}] NO_METADATA ${url}`);
+      result.errorMessage = "Video info retrieved but title was missing — unexpected server response.";
+      logs.push(`[${category}] FAIL no-title ${url}`);
     }
 
     results.push(result);
@@ -627,6 +639,7 @@ router.post("/test", async (req: Request, res: Response) => {
       successRate: results.length > 0 ? Math.round((passed / results.length) * 100) : 0,
       totalMs,
     },
+    ytdlpVersion,
     results,
     logs,
   });
