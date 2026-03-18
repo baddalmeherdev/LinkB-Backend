@@ -671,7 +671,10 @@ export default function DownloadScreen() {
 
         {videoInfo && !isLoadingInfo ? (
           <Animated.View entering={FadeInDown} style={styles.resultSection}>
-            <VideoCard info={videoInfo} />
+            <VideoCard
+              info={videoInfo}
+              onPlay={() => handlePlay(videoInfo.originalUrl)}
+            />
 
             <View style={styles.actionRow}>
               <Pressable
@@ -785,9 +788,9 @@ export default function DownloadScreen() {
                 <Animated.View entering={FadeIn} style={styles.watermarkBanner}>
                   <View style={styles.watermarkLeft}>
                     <MaterialCommunityIcons name="crown-outline" size={16} color={C.gold} />
-                    <View>
-                      <Text style={styles.watermarkTitle}>Free plan: up to 720p</Text>
-                      <Text style={styles.watermarkSub}>Upgrade for 1080p, 4K and highest quality</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.watermarkTitle}>Free plan: up to 720p with watermark</Text>
+                      <Text style={styles.watermarkSub}>Upgrade for 1080p, 4K and watermark-free downloads</Text>
                     </View>
                   </View>
                   <Pressable style={styles.upgradeBtn} onPress={() => setShowPremiumModal(true)}>
@@ -798,7 +801,7 @@ export default function DownloadScreen() {
               ) : (
                 <Animated.View entering={FadeIn} style={styles.cleanBanner}>
                   <Feather name="check-circle" size={14} color={C.success} />
-                  <Text style={styles.cleanBannerText}>Premium — full quality, all resolutions</Text>
+                  <Text style={styles.cleanBannerText}>Premium — full quality, no watermark, all resolutions</Text>
                 </Animated.View>
               )}
 

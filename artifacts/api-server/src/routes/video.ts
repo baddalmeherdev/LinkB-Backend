@@ -305,7 +305,12 @@ router.get("/stream", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
-  await streamViaTemp({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs });
+  await streamViaTemp({
+    req, res, url, format: ytdlpFormat, ext,
+    extraArgs: cfg.extraArgs,
+    isPremium: premiumUser,
+    isAudioOnly,
+  });
 });
 
 // ---- GET /update ----------------------------------------------------------
@@ -344,7 +349,8 @@ router.get("/status", async (_req: Request, res: Response) => {
 // ---- Download helper (temp file) ------------------------------------------
 // Downloads to /tmp first so ffmpeg can seek freely during mux.
 // This handles HLS/DASH merge, VP9+opus, and any format needing random access.
-// After yt-dlp exits cleanly, we stream the file to the client and delete it.
+// After yt-dlp exits cleanly, we optionally add a watermark (free users),
+// then stream the file to the client and delete all temp files.
 
 const BASE_YTDLP_ARGS = [
   "--no-warnings", "--no-playlist",
@@ -353,26 +359,63 @@ const BASE_YTDLP_ARGS = [
   "--buffer-size", "16K",
 ];
 
+async function runProcess(args: string[], bin: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    proc.stderr.on("data", (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line && !line.startsWith("[debug]")) console.log(`[${bin}]`, line);
+    });
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${bin} exited ${code}`));
+    });
+  });
+}
+
+async function addWatermark(inputPath: string, outputPath: string): Promise<void> {
+  const watermarkText = "LinkB Free  |  linkb.app";
+  const drawtext =
+    `drawtext=text='${watermarkText}':fontsize=22:fontcolor=white@0.70:` +
+    `x=w-tw-18:y=h-th-18:` +
+    `box=1:boxcolor=black@0.45:boxborderw=6`;
+
+  await runProcess([
+    "-y", "-i", inputPath,
+    "-vf", drawtext,
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+    "-c:a", "copy",
+    outputPath,
+  ], "ffmpeg");
+}
+
 async function streamViaTemp(opts: {
   req: Request; res: Response; url: string;
   format: string; ext: string; extraArgs: string[];
+  isPremium: boolean; isAudioOnly: boolean;
 }): Promise<void> {
-  const { req, res, url, format, ext, extraArgs } = opts;
+  const { req, res, url, format, ext, extraArgs, isPremium, isAudioOnly } = opts;
   const tmpId = randomBytes(8).toString("hex");
-  const tmpPath = `/tmp/rvdl-${tmpId}.${ext}`;
+  const tmpRaw = `/tmp/rvdl-${tmpId}.${ext}`;
+  const tmpWm  = `/tmp/rvdl-${tmpId}-wm.${ext}`;
+  const cleanup = () => {
+    fsp.unlink(tmpRaw).catch(() => {});
+    fsp.unlink(tmpWm).catch(() => {});
+  };
 
   let clientGone = false;
   req.on("close", () => { clientGone = true; });
 
   try {
-    // Phase 1: Download to temp file (yt-dlp + ffmpeg merge with seek support)
+    // Phase 1: yt-dlp downloads + merges to temp file
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(YTDLP, [
         ...BASE_YTDLP_ARGS,
         ...extraArgs,
         "-f", format,
         "--merge-output-format", ext,
-        "-o", tmpPath,
+        "-o", tmpRaw,
         url,
       ], { stdio: ["ignore", "pipe", "pipe"] });
 
@@ -391,15 +434,29 @@ async function streamViaTemp(opts: {
 
     if (clientGone) return;
 
-    // Phase 2: Stream completed file to client
-    const stat = await fsp.stat(tmpPath);
+    // Phase 2: Add watermark for free users (video only, not audio)
+    let serveFile = tmpRaw;
+    if (!isPremium && !isAudioOnly) {
+      try {
+        console.log("[watermark] adding free-tier watermark...");
+        await addWatermark(tmpRaw, tmpWm);
+        serveFile = tmpWm;
+        console.log("[watermark] done");
+      } catch (wmErr) {
+        console.warn("[watermark] failed, serving original:", wmErr);
+        serveFile = tmpRaw;
+      }
+    }
+
+    // Phase 3: Stream completed file to client
+    const stat = await fsp.stat(serveFile);
     if (!res.headersSent) {
       res.setHeader("Content-Length", String(stat.size));
       res.setHeader("X-Accel-Buffering", "no");
     }
 
     await new Promise<void>((resolve, reject) => {
-      const rs = createReadStream(tmpPath);
+      const rs = createReadStream(serveFile);
       rs.pipe(res, { end: true });
       rs.on("end", resolve);
       rs.on("error", reject);
@@ -412,7 +469,7 @@ async function streamViaTemp(opts: {
       res.status(500).json({ error: "DOWNLOAD_FAILED", message: "Could not download this video. Please try again." });
     }
   } finally {
-    fsp.unlink(tmpPath).catch(() => { /* temp file may not exist on early failure */ });
+    cleanup();
   }
 }
 

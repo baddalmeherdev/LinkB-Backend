@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import Colors from "@/constants/colors";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import type { VideoInfo } from "@/context/AppContext";
@@ -10,6 +11,7 @@ const C = Colors.dark;
 
 type Props = {
   info: VideoInfo;
+  onPlay?: () => void;
 };
 
 function formatDuration(seconds: number | null): string {
@@ -21,12 +23,16 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function VideoCard({ info }: Props) {
+export function VideoCard({ info, onPlay }: Props) {
   const duration = formatDuration(info.duration);
 
   return (
     <View style={styles.card}>
-      <View style={styles.thumbnailContainer}>
+      <Pressable
+        style={styles.thumbnailContainer}
+        onPress={onPlay}
+        disabled={!onPlay}
+      >
         {info.thumbnail ? (
           <Image
             source={{ uri: info.thumbnail }}
@@ -38,12 +44,32 @@ export function VideoCard({ info }: Props) {
             <Feather name="film" size={40} color={C.textMuted} />
           </View>
         )}
+
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.65)"]}
+          style={styles.thumbGradient}
+        />
+
+        {onPlay ? (
+          <View style={styles.playBtn}>
+            <Feather name="play" size={26} color="#fff" />
+          </View>
+        ) : null}
+
         {duration ? (
           <View style={styles.durationBadge}>
             <Text style={styles.durationText}>{duration}</Text>
           </View>
         ) : null}
-      </View>
+
+        {onPlay ? (
+          <View style={styles.previewHint}>
+            <Feather name="play-circle" size={11} color={C.accent} />
+            <Text style={styles.previewHintText}>Tap to preview</Text>
+          </View>
+        ) : null}
+      </Pressable>
+
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={2}>
           {info.title}
@@ -88,11 +114,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  thumbGradient: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+  },
+  playBtn: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginTop: -28,
+    marginLeft: -28,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(0,0,0,0.60)",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   durationBadge: {
     position: "absolute",
     bottom: 10,
     right: 10,
-    backgroundColor: "rgba(0,0,0,0.8)",
+    backgroundColor: "rgba(0,0,0,0.80)",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -101,6 +149,26 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 12,
     fontFamily: "Inter_500Medium",
+  },
+  previewHint: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: "rgba(0,0,0,0.60)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: C.accent + "55",
+  },
+  previewHintText: {
+    color: C.accent,
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.4,
   },
   info: {
     padding: 14,
