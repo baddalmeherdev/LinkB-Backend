@@ -1,13 +1,10 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Image } from "expo-image";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Platform,
   Pressable,
-  Share,
   StyleSheet,
   Text,
   View,
@@ -31,39 +28,33 @@ type Props = {
 };
 
 function formatFilesize(bytes: number | null): string {
-  if (!bytes) return "";
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 export function QualityRow({ quality, isPremiumUser, onDownload, onRequirePremium }: Props) {
   const [loading, setLoading] = useState(false);
   const scale = useSharedValue(1);
 
-  const isHD = ["720p", "1080p", "2160p"].includes(quality.quality);
-  const locked = isHD && !isPremiumUser;
-
+  const locked = quality.isHD && !isPremiumUser;
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const handlePress = async () => {
-    if (locked) {
-      onRequirePremium();
-      return;
-    }
-    scale.value = withSpring(0.96, {}, () => {
-      scale.value = withSpring(1);
-    });
+    if (locked) { onRequirePremium(); return; }
+    scale.value = withSpring(0.96, {}, () => { scale.value = withSpring(1); });
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     await onDownload(quality);
     setLoading(false);
   };
 
-  const icon = quality.isAudioOnly ? (
-    <MaterialCommunityIcons name="music-note" size={18} color="#60A5FA" />
-  ) : (
-    <Feather name="film" size={18} color={C.textSecondary} />
-  );
+  const icon = quality.isAudioOnly
+    ? <MaterialCommunityIcons name="music-note" size={18} color="#60A5FA" />
+    : <Feather name="film" size={18} color={C.textSecondary} />;
+
+  const sizeText = formatFilesize(quality.filesize);
 
   return (
     <Animated.View style={animStyle}>
@@ -73,20 +64,23 @@ export function QualityRow({ quality, isPremiumUser, onDownload, onRequirePremiu
         disabled={loading}
       >
         <View style={styles.iconWrap}>{icon}</View>
+
         <View style={styles.info}>
-          <Text style={styles.qualityText}>{quality.quality}</Text>
-          {quality.resolution !== "audio" ? (
-            <Text style={styles.resText}>
-              {quality.resolution}
-              {quality.filesize ? ` · ${formatFilesize(quality.filesize)}` : ""}
-            </Text>
-          ) : null}
+          <Text style={styles.qualityText}>
+            {quality.label || quality.quality}
+          </Text>
+          <Text style={styles.resText}>
+            {quality.resolution !== "audio" ? quality.resolution : "Audio only"}
+            {sizeText ? ` · ${sizeText}` : ""}
+          </Text>
         </View>
+
         <QualityBadge
           quality={quality.quality}
-          isPremium={isHD}
+          isHD={quality.isHD}
           userHasPremium={isPremiumUser}
         />
+
         <View style={styles.downloadBtn}>
           {loading ? (
             <ActivityIndicator size="small" color={C.accent} />

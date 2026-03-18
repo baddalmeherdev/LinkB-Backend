@@ -10,10 +10,12 @@ import React, {
 export type VideoQuality = {
   formatId: string;
   quality: string;
+  label: string;
   resolution: string;
   ext: string;
   filesize: number | null;
   isAudioOnly: boolean;
+  isHD: boolean;
 };
 
 export type VideoInfo = {

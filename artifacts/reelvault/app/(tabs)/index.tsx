@@ -196,8 +196,7 @@ export default function DownloadScreen() {
   const handleDownload = async (quality: VideoQuality) => {
     if (!videoInfo) return;
 
-    const isHD = ["720p", "1080p", "2160p"].includes(quality.quality);
-    if (isHD && !isPremium) {
+    if (quality.isHD && !isPremium) {
       setShowPremiumModal(true);
       return;
     }
@@ -239,7 +238,7 @@ export default function DownloadScreen() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const quality = lastDownloadedQuality ?? videoInfo.qualities.find(
-      (q) => !["720p", "1080p", "2160p"].includes(q.quality) && !q.isAudioOnly
+      (q) => !q.isHD && !q.isAudioOnly
     ) ?? videoInfo.qualities[0];
 
     if (!quality) return;
@@ -610,7 +609,7 @@ export default function DownloadScreen() {
             </LinearGradient>
             <Text style={styles.emptyTitle}>Download Any Video, Instantly</Text>
             <Text style={styles.emptySubtitle}>
-              Paste any video link below and download it in seconds
+              Supports 2000+ websites via yt-dlp — YouTube, Instagram, TikTok, Reddit, and much more
             </Text>
 
             <View style={styles.featuresRow}>
@@ -624,7 +623,7 @@ export default function DownloadScreen() {
               </View>
               <View style={styles.featureChip}>
                 <Feather name="globe" size={12} color={C.accent} />
-                <Text style={styles.featureChipText}>1000+ Sites</Text>
+                <Text style={styles.featureChipText}>2000+ Sites</Text>
               </View>
             </View>
 
@@ -635,6 +634,7 @@ export default function DownloadScreen() {
                 { label: "TikTok", color: "#69C9D0" },
                 { label: "Facebook", color: "#1877F2" },
                 { label: "Twitter", color: "#1DA1F2" },
+                { label: "Reddit", color: "#FF4500" },
                 { label: "Vimeo", color: "#1AB7EA" },
                 { label: "+ More", color: C.textMuted },
               ].map((p) => (
@@ -643,6 +643,13 @@ export default function DownloadScreen() {
                   <Text style={[styles.platformPillText, { color: p.color }]}>{p.label}</Text>
                 </View>
               ))}
+            </View>
+
+            <View style={styles.disclaimerBox}>
+              <Feather name="shield" size={12} color={C.textMuted} />
+              <Text style={styles.disclaimerText}>
+                Download only content you have rights to use. Respect creators and copyright laws.
+              </Text>
             </View>
           </Animated.View>
         ) : null}
@@ -881,6 +888,17 @@ const styles = StyleSheet.create({
   },
   platformDot: { width: 6, height: 6, borderRadius: 3 },
   platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  disclaimerBox: {
+    flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 16,
+    backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.06)",
+    maxWidth: 320,
+  },
+  disclaimerText: {
+    flex: 1, color: C.textMuted, fontSize: 11,
+    fontFamily: "Inter_400Regular", lineHeight: 16,
+  },
   videoModalOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.88)",
     alignItems: "center", justifyContent: "center",

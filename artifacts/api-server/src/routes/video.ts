@@ -1,3 +1,8 @@
+// Video Routes
+// All video-related API endpoints.
+// Extraction, preview, quality listing, playback, and download are all handled here.
+// The actual heavy lifting is done by services/ and handlers/.
+
 import { Router, type IRouter, type Request, type Response } from "express";
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
@@ -5,16 +10,21 @@ import * as fs from "fs";
 import { createReadStream } from "fs";
 import * as path from "path";
 import * as os from "os";
+import { detectPlatform, validateUrl } from "../services/platform-detect.js";
+import { extractInfo, processQualities, resolvePlaybackUrl, spawnDownload, selfUpdate, getCurrentVersion, YTDLP, FFMPEG } from "../services/extractor.js";
+import { previewCache, infoCache } from "../services/metadata-cache.js";
+import { downloadQueue } from "../services/download-queue.js";
+import { getHandler } from "../handlers/index.js";
 
 const execFileAsync = promisify(execFile);
 const router: IRouter = Router();
 
-const YTDLP = "yt-dlp";
-const FFMPEG = "ffmpeg";
 const WATERMARK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
+// ---- Rate Limiting --------------------------------------------------------
+
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const RATE_LIMIT = 20;
+const RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60 * 1000;
 
 function checkRateLimit(ip: string): boolean {
@@ -35,44 +45,30 @@ function getClientIp(req: Request): string {
   return req.socket.remoteAddress ?? "unknown";
 }
 
-function validateUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return ["http:", "https:"].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}
+// ---- Helper ---------------------------------------------------------------
 
-function detectPlatform(url: string): string {
-  if (/youtube\.com|youtu\.be/.test(url)) return "YouTube";
-  if (/instagram\.com/.test(url)) return "Instagram";
-  if (/facebook\.com|fb\.watch/.test(url)) return "Facebook";
-  if (/twitter\.com|x\.com/.test(url)) return "X/Twitter";
-  if (/tiktok\.com/.test(url)) return "TikTok";
-  if (/vimeo\.com/.test(url)) return "Vimeo";
-  if (/dailymotion\.com/.test(url)) return "Dailymotion";
-  if (/twitch\.tv/.test(url)) return "Twitch";
-  if (/reddit\.com/.test(url)) return "Reddit";
-  if (/pinterest\.com/.test(url)) return "Pinterest";
-  if (/linkedin\.com/.test(url)) return "LinkedIn";
-  if (/snapchat\.com/.test(url)) return "Snapchat";
-  if (/bilibili\.com/.test(url)) return "Bilibili";
-  if (/soundcloud\.com/.test(url)) return "SoundCloud";
-  if (/rumble\.com/.test(url)) return "Rumble";
-  if (/odysee\.com/.test(url)) return "Odysee";
-  if (/kick\.com/.test(url)) return "Kick";
-  return "Web";
+function classifyError(msg: string): { status: number; code: string; message: string } {
+  const m = msg.toLowerCase();
+  if (m.includes("unsupported url") || m.includes("no such extractor"))
+    return { status: 400, code: "UNSUPPORTED_URL", message: "This link is not supported. Try a different URL from a supported platform." };
+  if (m.includes("private") || m.includes("unavailable") || m.includes("not available"))
+    return { status: 400, code: "PRIVATE_VIDEO", message: "This video is private or unavailable." };
+  if (m.includes("geo") || m.includes("not available in your country"))
+    return { status: 400, code: "GEO_BLOCKED", message: "This video is geo-restricted and cannot be accessed from this server." };
+  if (m.includes("enoent") || m.includes("not found") || m.includes("yt-dlp"))
+    return { status: 503, code: "SERVICE_UNAVAILABLE", message: "Downloader service is temporarily unavailable." };
+  return { status: 500, code: "EXTRACTION_FAILED", message: "Could not fetch video info. Please check the link and try again." };
 }
 
 async function cleanupFiles(...files: string[]): Promise<void> {
   for (const f of files) {
-    try {
-      await fs.promises.unlink(f);
-    } catch {
-    }
+    try { await fs.promises.unlink(f); } catch { /* ignore */ }
   }
 }
+
+// ---- POST /preview --------------------------------------------------------
+// Quick metadata fetch: title, thumbnail, duration.
+// Results are cached for 5 minutes.
 
 router.post("/preview", async (req: Request, res: Response) => {
   const ip = getClientIp(req);
@@ -83,44 +79,44 @@ router.post("/preview", async (req: Request, res: Response) => {
 
   const { url } = req.body as { url?: string };
   if (!url || typeof url !== "string") {
-    res.status(400).json({ error: "INVALID_REQUEST", message: "URL is required" });
+    res.status(400).json({ error: "INVALID_REQUEST", message: "URL is required." });
     return;
   }
   if (!validateUrl(url)) {
-    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS URL" });
+    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS URL." });
     return;
   }
 
+  // Cache hit
+  const cached = previewCache.get<object>(url);
+  if (cached) { res.json(cached); return; }
+
   try {
-    const { stdout } = await execFileAsync(YTDLP, [
-      "--dump-json",
-      "--no-playlist",
-      "--no-warnings",
-      url,
-    ], { timeout: 20000 });
+    const handler = getHandler(url);
+    console.log(`[preview] handler=${handler.name} url=${url}`);
 
-    const info = JSON.parse(stdout) as Record<string, unknown>;
-
-    res.json({
-      title: String(info.title ?? "Unknown Title"),
-      thumbnail: (info.thumbnail as string | null) ?? null,
-      duration: (info.duration as number | null) ?? null,
-      uploader: (info.uploader as string | null) ?? null,
+    const info = await extractInfo(url, handler.getConfig());
+    const result = {
+      title: info.title,
+      thumbnail: info.thumbnail,
+      duration: info.duration,
+      uploader: info.uploader,
       platform: detectPlatform(url),
-    });
-  } catch (err: unknown) {
+    };
+
+    previewCache.set(url, result);
+    res.json(result);
+  } catch (err) {
+    console.error("[preview] error:", err);
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("Unsupported URL") || msg.includes("unsupported url")) {
-      res.status(400).json({ error: "UNSUPPORTED_URL", message: "This URL is not supported." });
-      return;
-    }
-    if (msg.includes("private") || msg.includes("unavailable")) {
-      res.status(400).json({ error: "PREVIEW_FAILED", message: "This video is private or unavailable." });
-      return;
-    }
-    res.status(400).json({ error: "PREVIEW_FAILED", message: "Could not fetch video preview. Please check the URL." });
+    const { status, code, message } = classifyError(msg);
+    res.status(status).json({ error: code, message });
   }
 });
+
+// ---- POST /info -----------------------------------------------------------
+// Full format listing with quality options.
+// Results are cached for 3 minutes.
 
 router.post("/info", async (req: Request, res: Response) => {
   const ip = getClientIp(req);
@@ -131,243 +127,90 @@ router.post("/info", async (req: Request, res: Response) => {
 
   const { url } = req.body as { url?: string };
   if (!url || typeof url !== "string") {
-    res.status(400).json({ error: "INVALID_REQUEST", message: "URL is required" });
+    res.status(400).json({ error: "INVALID_REQUEST", message: "URL is required." });
     return;
   }
   if (!validateUrl(url)) {
-    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS URL" });
+    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS URL." });
     return;
   }
 
+  const cached = infoCache.get<object>(url);
+  if (cached) { res.json(cached); return; }
+
   try {
-    const { stdout } = await execFileAsync(YTDLP, [
-      "--dump-json",
-      "--no-playlist",
-      "--no-warnings",
-      "--compat-options", "no-youtube-unavailable-videos",
-      url,
-    ], { timeout: 45000 });
+    const handler = getHandler(url);
+    console.log(`[info] handler=${handler.name} url=${url}`);
 
-    const info = JSON.parse(stdout) as Record<string, unknown>;
-    const formats = (info.formats as Record<string, unknown>[]) ?? [];
+    const info = await extractInfo(url, handler.getConfig());
+    const qualities = processQualities(info);
 
-    type QualityItem = {
-      formatId: string;
-      quality: string;
-      resolution: string;
-      ext: string;
-      filesize: number | null;
-      isAudioOnly: boolean;
+    const result = {
+      title: info.title,
+      thumbnail: info.thumbnail,
+      duration: info.duration,
+      uploader: info.uploader,
+      platform: detectPlatform(url),
+      qualities,
+      originalUrl: url,
     };
 
-    const qualities: QualityItem[] = [];
-    const seenResolutions = new Set<string>();
-
-    const audioFormats = formats.filter(
-      (f) => f.vcodec === "none" && f.acodec !== "none" && f.acodec !== null
-    );
-    const bestAudio = audioFormats.sort((a, b) => ((b.abr as number) ?? 0) - ((a.abr as number) ?? 0))[0];
-    if (bestAudio) {
-      qualities.push({
-        formatId: String(bestAudio.format_id),
-        quality: "Audio Only",
-        resolution: "audio",
-        ext: "mp3",
-        filesize: (bestAudio.filesize as number | null) ?? null,
-        isAudioOnly: true,
-      });
-    }
-
-    const videoFormats = formats
-      .filter(
-        (f) =>
-          f.vcodec !== "none" &&
-          f.vcodec !== null &&
-          f.height &&
-          typeof f.height === "number" &&
-          f.height > 0
-      )
-      .sort((a, b) => ((b.height as number) ?? 0) - ((a.height as number) ?? 0));
-
-    const targetQualities = [144, 240, 360, 480, 720, 1080];
-    for (const target of targetQualities) {
-      const closest = videoFormats.reduce<Record<string, unknown> | null>((best, f) => {
-        const h = f.height as number;
-        if (!best) return f;
-        const bestH = best.height as number;
-        if (Math.abs(h - target) < Math.abs(bestH - target)) return f;
-        return best;
-      }, null);
-
-      if (closest) {
-        const h = closest.height as number;
-        const resKey = String(h);
-        if (!seenResolutions.has(resKey)) {
-          seenResolutions.add(resKey);
-          qualities.push({
-            formatId: String(closest.format_id),
-            quality: `${h}p`,
-            resolution: `${closest.width ?? "?"}x${h}`,
-            ext: "mp4",
-            filesize: (closest.filesize as number | null) ?? null,
-            isAudioOnly: false,
-          });
-        }
-      }
-    }
-
-    if (qualities.length === 0 && info.url) {
-      qualities.push({
-        formatId: "best",
-        quality: "Best Available",
-        resolution: "auto",
-        ext: "mp4",
-        filesize: null,
-        isAudioOnly: false,
-      });
-    }
-
-    const sortedQualities = [
-      ...qualities.filter((q) => q.isAudioOnly),
-      ...qualities
-        .filter((q) => !q.isAudioOnly)
-        .sort((a, b) => {
-          const aH = parseInt(a.quality) || 0;
-          const bH = parseInt(b.quality) || 0;
-          return aH - bH;
-        }),
-    ];
-
-    res.json({
-      title: String(info.title ?? "Unknown Title"),
-      thumbnail: (info.thumbnail as string | null) ?? null,
-      duration: (info.duration as number | null) ?? null,
-      uploader: (info.uploader as string | null) ?? null,
-      platform: detectPlatform(url),
-      qualities: sortedQualities,
-      originalUrl: url,
-    });
-  } catch (err: unknown) {
-    console.error("yt-dlp error:", err);
+    infoCache.set(url, result);
+    res.json(result);
+  } catch (err) {
+    console.error("[info] error:", err);
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("not found") || msg.includes("ENOENT")) {
-      res.status(500).json({ error: "YT_DLP_MISSING", message: "Downloader service is unavailable. Please try again later." });
-      return;
-    }
-    if (msg.includes("private") || msg.includes("unavailable") || msg.includes("not available")) {
-      res.status(400).json({ error: "FETCH_FAILED", message: "This video is private or unavailable. Please check the URL and try again." });
-      return;
-    }
-    if (msg.includes("Unsupported URL") || msg.includes("unsupported url")) {
-      res.status(400).json({ error: "UNSUPPORTED_URL", message: "This URL is not supported. Please try a URL from YouTube, Instagram, TikTok, Facebook, Twitter, or another supported platform." });
-      return;
-    }
-    res.status(500).json({
-      error: "FETCH_FAILED",
-      message: "Could not fetch media info. Please check the URL and try again.",
-    });
+    const { status, code, message } = classifyError(msg);
+    res.status(status).json({ error: code, message });
   }
 });
+
+// ---- GET /play ------------------------------------------------------------
+// Range-aware video proxy for in-app playback.
+// Resolves direct URL via yt-dlp, then proxies with full range support.
 
 router.get("/play", async (req: Request, res: Response) => {
   const { url } = req.query as { url?: string };
   if (!url || !validateUrl(url)) {
-    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL" });
+    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL." });
     return;
   }
 
-  console.log(`[play] Getting source URL for: ${url}`);
+  console.log(`[play] url=${url}`);
   try {
-    // Get direct URL + content-type from yt-dlp
-    const { stdout: urlOut } = await execFileAsync(YTDLP, [
-      "--no-warnings",
-      "--no-playlist",
-      "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
-      "--get-url",
-      "--get-filename",
-      "-o", "%(ext)s",
-      url,
-    ], { timeout: 40000 });
+    const handler = getHandler(url);
+    const sourceUrl = await resolvePlaybackUrl(url, handler.getConfig());
+    console.log(`[play] resolved → ${sourceUrl.substring(0, 80)}...`);
 
-    const lines = urlOut.trim().split("\n").filter(Boolean);
-    // yt-dlp outputs: ext\nurl (or just url if single format)
-    let sourceUrl = "";
-    if (lines.length >= 2) {
-      // Could be ext then url, or two urls (video+audio separate)
-      if (lines[0].startsWith("http")) {
-        // two separate stream URLs (video+audio) — fall through to fallback
-        sourceUrl = "";
-      } else {
-        sourceUrl = lines[1];
-      }
-    } else if (lines.length === 1) {
-      sourceUrl = lines[0];
-    }
-
-    if (!sourceUrl || !sourceUrl.startsWith("http")) {
-      // Fallback: just get the best URL without filename
-      const { stdout: fallbackOut } = await execFileAsync(YTDLP, [
-        "--no-warnings",
-        "--no-playlist",
-        "-f", "best[height<=720]/best",
-        "--get-url",
-        url,
-      ], { timeout: 40000 });
-      sourceUrl = fallbackOut.trim().split("\n").filter(Boolean)[0] ?? "";
-    }
-
-    if (!sourceUrl || !sourceUrl.startsWith("http")) {
-      throw new Error("No source URL returned");
-    }
-
-    console.log(`[play] Proxying source: ${sourceUrl.substring(0, 80)}...`);
-
-    // Proxy the video with range request support (use global fetch from Node 18+)
     const rangeHeader = req.headers["range"];
     const proxyHeaders: Record<string, string> = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       "Accept": "*/*",
       "Accept-Encoding": "identity",
     };
-    if (rangeHeader) {
-      proxyHeaders["Range"] = rangeHeader;
-    }
+    if (rangeHeader) proxyHeaders["Range"] = rangeHeader;
 
     const upstream = await fetch(sourceUrl, { headers: proxyHeaders });
-
     if (!upstream.ok && upstream.status !== 206) {
       throw new Error(`Upstream returned ${upstream.status}`);
     }
 
-    const contentType = upstream.headers.get("content-type") ?? "video/mp4";
-    const contentLength = upstream.headers.get("content-length");
-    const contentRange = upstream.headers.get("content-range");
-    const acceptRanges = upstream.headers.get("accept-ranges");
-
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Content-Type", contentType);
-    if (contentLength) res.setHeader("Content-Length", contentLength);
-    if (contentRange) res.setHeader("Content-Range", contentRange);
-    if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
-    else res.setHeader("Accept-Ranges", "bytes");
-
+    res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "video/mp4");
+    res.setHeader("Accept-Ranges", upstream.headers.get("accept-ranges") ?? "bytes");
+    const len = upstream.headers.get("content-length");
+    const range = upstream.headers.get("content-range");
+    if (len) res.setHeader("Content-Length", len);
+    if (range) res.setHeader("Content-Range", range);
     res.status(upstream.status);
 
-    if (!upstream.body) {
-      throw new Error("No response body from upstream");
-    }
+    if (!upstream.body) throw new Error("Empty response body from upstream.");
 
-    // Convert Web ReadableStream → Node.js Readable for piping
     const { Readable } = await import("stream");
     const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
-
-    req.on("close", () => {
-      try { nodeStream.destroy(); } catch {}
-    });
-
+    req.on("close", () => { try { nodeStream.destroy(); } catch { /* ignore */ } });
     nodeStream.pipe(res);
-
   } catch (err) {
     console.error("[play] error:", err);
     if (!res.headersSent) {
@@ -375,6 +218,11 @@ router.get("/play", async (req: Request, res: Response) => {
     }
   }
 });
+
+// ---- GET /stream ----------------------------------------------------------
+// Final download endpoint.
+// Premium users get a direct clean stream.
+// Free users get the video with a watermark applied via ffmpeg.
 
 router.get("/stream", async (req: Request, res: Response) => {
   const { url, formatId, quality, isPremium, title } = req.query as {
@@ -386,22 +234,22 @@ router.get("/stream", async (req: Request, res: Response) => {
   };
 
   if (!url || !formatId) {
-    res.status(400).json({ error: "INVALID_REQUEST", message: "url and formatId are required" });
+    res.status(400).json({ error: "INVALID_REQUEST", message: "url and formatId are required." });
     return;
   }
   if (!validateUrl(url)) {
-    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL" });
+    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL." });
     return;
   }
 
   const premiumUser = isPremium === "true";
-  const isHdFormat = ["720p", "1080p", "2160p"].includes(quality ?? "");
+  const isHdFormat = ["720p", "1080p", "1440p", "2160p"].includes(quality ?? "");
   if (isHdFormat && !premiumUser) {
-    res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require Premium" });
+    res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require Premium." });
     return;
   }
 
-  const isAudioOnly = formatId === "bestaudio" || formatId.startsWith("audio") || quality === "Audio Only";
+  const isAudioOnly = quality === "Audio Only" || formatId === "bestaudio";
   const ext = isAudioOnly ? "mp3" : "mp4";
   const safeTitle = (title ?? "video").replace(/[^a-zA-Z0-9_\- ]/g, "_").substring(0, 80);
   const filename = `${safeTitle}.${ext}`;
@@ -409,25 +257,70 @@ router.get("/stream", async (req: Request, res: Response) => {
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
 
-  const ytdlpFormat = isAudioOnly
-    ? `${formatId}/bestaudio/best`
-    : `${formatId}+bestaudio/${formatId}/best`;
+  const handler = getHandler(url);
+  const cfg = handler.getConfig();
+  const ytdlpFormat = cfg.downloadFormatOverride
+    ? cfg.downloadFormatOverride(formatId, isAudioOnly)
+    : isAudioOnly
+      ? `${formatId}/bestaudio[ext=m4a]/bestaudio`
+      : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio/${formatId}/best[ext=mp4]/best`;
+
+  console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
 
   if (!premiumUser && !isAudioOnly) {
-    await streamWithWatermark({ req, res, url, formatId: ytdlpFormat, safeTitle });
+    await downloadQueue.enqueue(() =>
+      streamWithWatermark({ req, res, url, formatId: ytdlpFormat, extraArgs: cfg.extraArgs })
+    );
   } else {
-    streamDirect({ req, res, url, format: ytdlpFormat, ext });
+    streamDirect({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs });
   }
 });
+
+// ---- GET /update ----------------------------------------------------------
+// Triggers a yt-dlp self-update. Call this to keep extraction support current.
+
+router.get("/update", async (_req: Request, res: Response) => {
+  try {
+    console.log("[update] Running yt-dlp self-update...");
+    const output = await selfUpdate();
+    const version = await getCurrentVersion();
+    console.log(`[update] Done. Version: ${version}`);
+    res.json({ success: true, output, version });
+  } catch (err) {
+    console.error("[update] error:", err);
+    res.status(500).json({ error: "UPDATE_FAILED", message: "Could not update yt-dlp." });
+  }
+});
+
+// ---- GET /status ----------------------------------------------------------
+// Returns server health and yt-dlp version info.
+
+router.get("/status", async (_req: Request, res: Response) => {
+  try {
+    const version = await getCurrentVersion();
+    res.json({
+      status: "ok",
+      ytdlpVersion: version,
+      previewCacheSize: previewCache.size,
+      infoCacheSize: infoCache.size,
+      queueActive: downloadQueue.activeCount,
+      queuePending: downloadQueue.pendingCount,
+    });
+  } catch {
+    res.json({ status: "ok", ytdlpVersion: "unknown" });
+  }
+});
+
+// ---- Streaming helpers ----------------------------------------------------
 
 async function streamWithWatermark(opts: {
   req: Request;
   res: Response;
   url: string;
   formatId: string;
-  safeTitle: string;
+  extraArgs: string[];
 }): Promise<void> {
-  const { res, url, formatId } = opts;
+  const { res, url, formatId, extraArgs } = opts;
   const tmpId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const tmpIn = path.join(os.tmpdir(), `ld_in_${tmpId}.mp4`);
   const tmpOut = path.join(os.tmpdir(), `ld_out_${tmpId}.mp4`);
@@ -435,16 +328,16 @@ async function streamWithWatermark(opts: {
   try {
     console.log(`[watermark] Downloading: ${url}`);
     await execFileAsync(YTDLP, [
-      "--no-warnings",
-      "--no-playlist",
+      "--no-warnings", "--no-playlist",
+      "--no-check-certificate",
+      ...extraArgs,
       "-f", formatId,
       "--merge-output-format", "mp4",
       "-o", tmpIn,
       url,
     ], { timeout: 300000 });
 
-    console.log(`[watermark] Applying watermark to ${tmpIn}`);
-
+    console.log(`[watermark] Applying watermark`);
     const drawtext = [
       `text='LinkDrop'`,
       `fontfile=${WATERMARK_FONT}`,
@@ -459,32 +352,25 @@ async function streamWithWatermark(opts: {
     await execFileAsync(FFMPEG, [
       "-i", tmpIn,
       "-vf", `drawtext=${drawtext}`,
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-crf", "26",
-      "-c:a", "aac",
-      "-b:a", "128k",
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+      "-c:a", "aac", "-b:a", "128k",
       "-movflags", "+faststart",
-      "-y",
-      tmpOut,
+      "-y", tmpOut,
     ], { timeout: 600000 });
 
     const stat = await fs.promises.stat(tmpOut);
     res.setHeader("Content-Length", String(stat.size));
 
     const readStream = createReadStream(tmpOut);
-    readStream.pipe(res);
-
     const cleanup = () => cleanupFiles(tmpIn, tmpOut);
     res.on("finish", cleanup);
     res.on("close", cleanup);
     readStream.on("error", (err) => {
-      console.error("[watermark] read stream error:", err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: "STREAM_ERROR", message: "Failed to stream watermarked video." });
-      }
+      console.error("[watermark] stream error:", err);
+      if (!res.headersSent) res.status(500).json({ error: "STREAM_ERROR", message: "Failed to stream video." });
       cleanup();
     });
+    readStream.pipe(res);
   } catch (err) {
     console.error("[watermark] error:", err);
     cleanupFiles(tmpIn, tmpOut);
@@ -500,44 +386,38 @@ function streamDirect(opts: {
   url: string;
   format: string;
   ext: string;
+  extraArgs: string[];
 }): void {
-  const { req, res, url, format, ext } = opts;
+  const { req, res, url, format, ext, extraArgs } = opts;
   res.setHeader("Transfer-Encoding", "chunked");
 
-  const args = [
-    "--no-warnings",
-    "--no-playlist",
+  const proc = spawn(YTDLP, [
+    "--no-warnings", "--no-playlist",
+    "--no-check-certificate",
+    ...extraArgs,
     "-f", format,
     "--merge-output-format", ext,
     "-o", "-",
     url,
-  ];
+  ], { stdio: ["ignore", "pipe", "pipe"] });
 
-  console.log(`[stream] Direct: ${url} format=${format}`);
-  const proc = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
+  console.log(`[stream-direct] format=${format} url=${url}`);
 
   proc.stderr.on("data", (d: Buffer) => {
     const line = d.toString().trim();
-    if (line) console.log("[yt-dlp]", line);
+    if (line && !line.startsWith("[debug]")) console.log("[yt-dlp]", line);
   });
 
   proc.stdout.pipe(res);
-
-  req.on("close", () => {
-    proc.kill("SIGTERM");
-  });
+  req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
 
   proc.on("error", (err) => {
-    console.error("spawn error:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "STREAM_ERROR", message: "Could not start download." });
-    }
+    console.error("[stream-direct] spawn error:", err);
+    if (!res.headersSent) res.status(500).json({ error: "STREAM_ERROR", message: "Could not start download." });
   });
 
   proc.on("close", (code) => {
-    if (code !== 0) {
-      console.error(`yt-dlp exited with code ${code}`);
-    }
+    if (code !== 0 && code !== null) console.warn(`[stream-direct] yt-dlp exited with code ${code}`);
   });
 }
 
