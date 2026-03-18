@@ -4,6 +4,8 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { spawn } from "child_process";
+import { createReadStream, promises as fsp } from "fs";
+import { randomBytes } from "crypto";
 import { detectPlatform, validateUrl } from "../services/platform-detect.js";
 import { extractInfoRobust, processQualities, resolvePlaybackUrl, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
 import { previewCache, infoCache } from "../services/metadata-cache.js";
@@ -298,8 +300,12 @@ router.get("/stream", async (req: Request, res: Response) => {
         ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
         : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
 
+  // Flush headers immediately to keep proxy alive during yt-dlp processing.
+  // The body follows once the temp file is ready (may take 10-60 s).
+  res.flushHeaders();
+
   console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
-  streamDirect({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs });
+  await streamViaTemp({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs });
 });
 
 // ---- GET /update ----------------------------------------------------------
@@ -335,51 +341,79 @@ router.get("/status", async (_req: Request, res: Response) => {
   }
 });
 
-// ---- Streaming helper -----------------------------------------------------
+// ---- Download helper (temp file) ------------------------------------------
+// Downloads to /tmp first so ffmpeg can seek freely during mux.
+// This handles HLS/DASH merge, VP9+opus, and any format needing random access.
+// After yt-dlp exits cleanly, we stream the file to the client and delete it.
 
-function streamDirect(opts: {
+const BASE_YTDLP_ARGS = [
+  "--no-warnings", "--no-playlist",
+  "--no-check-certificate",
+  "--concurrent-fragments", "4",
+  "--buffer-size", "16K",
+];
+
+async function streamViaTemp(opts: {
   req: Request; res: Response; url: string;
   format: string; ext: string; extraArgs: string[];
-}): void {
+}): Promise<void> {
   const { req, res, url, format, ext, extraArgs } = opts;
-  res.setHeader("Transfer-Encoding", "chunked");
+  const tmpId = randomBytes(8).toString("hex");
+  const tmpPath = `/tmp/rvdl-${tmpId}.${ext}`;
 
-  const mergeFormat = ext === "mp4" ? "mp4" : ext;
-  const ffmpegMovFlags = ext === "mp4"
-    ? ["--postprocessor-args", "ffmpeg:-movflags frag_keyframes+empty_moov+default_base_moof"]
-    : [];
+  let clientGone = false;
+  req.on("close", () => { clientGone = true; });
 
-  const proc = spawn(YTDLP, [
-    "--no-warnings", "--no-playlist",
-    "--no-check-certificate",
-    "--concurrent-fragments", "4",
-    "--buffer-size", "16K",
-    ...extraArgs,
-    "-f", format,
-    "--merge-output-format", mergeFormat,
-    ...ffmpegMovFlags,
-    "-o", "-",
-    url,
-  ], { stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    // Phase 1: Download to temp file (yt-dlp + ffmpeg merge with seek support)
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(YTDLP, [
+        ...BASE_YTDLP_ARGS,
+        ...extraArgs,
+        "-f", format,
+        "--merge-output-format", ext,
+        "-o", tmpPath,
+        url,
+      ], { stdio: ["ignore", "pipe", "pipe"] });
 
-  console.log(`[stream-direct] format=${format} url=${url}`);
+      proc.stderr.on("data", (d: Buffer) => {
+        const line = d.toString().trim();
+        if (line && !line.startsWith("[debug]")) console.log("[yt-dlp]", line);
+      });
 
-  proc.stderr.on("data", (d: Buffer) => {
-    const line = d.toString().trim();
-    if (line && !line.startsWith("[debug]")) console.log("[yt-dlp]", line);
-  });
+      req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
+      proc.on("error", reject);
+      proc.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`yt-dlp exited ${code}`));
+      });
+    });
 
-  proc.stdout.pipe(res);
-  req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
+    if (clientGone) return;
 
-  proc.on("error", (err) => {
-    console.error("[stream-direct] spawn error:", err);
-    if (!res.headersSent) res.status(500).json({ error: "STREAM_ERROR", message: "Could not start download." });
-  });
+    // Phase 2: Stream completed file to client
+    const stat = await fsp.stat(tmpPath);
+    if (!res.headersSent) {
+      res.setHeader("Content-Length", String(stat.size));
+      res.setHeader("X-Accel-Buffering", "no");
+    }
 
-  proc.on("close", (code) => {
-    if (code !== 0 && code !== null) console.warn(`[stream-direct] yt-dlp exited ${code}`);
-  });
+    await new Promise<void>((resolve, reject) => {
+      const rs = createReadStream(tmpPath);
+      rs.pipe(res, { end: true });
+      rs.on("end", resolve);
+      rs.on("error", reject);
+      req.on("close", () => { rs.destroy(); resolve(); });
+    });
+
+  } catch (err) {
+    console.error("[stream-temp] failed:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "DOWNLOAD_FAILED", message: "Could not download this video. Please try again." });
+    }
+  } finally {
+    fsp.unlink(tmpPath).catch(() => { /* temp file may not exist on early failure */ });
+  }
 }
 
 export default router;

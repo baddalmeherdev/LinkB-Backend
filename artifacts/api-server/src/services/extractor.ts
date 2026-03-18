@@ -276,8 +276,7 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
   // Fallback when no formats are listed (direct-URL sites)
   if (qualities.filter((q) => !q.isAudioOnly).length === 0) {
     qualities.push({
-      // Prefer https/dash protocol streams; exclude m3u8 first, fall back to any
-      formatId: "best[height<=720][ext=mp4][acodec!=none][vcodec!=none][protocol!*=m3u8]/bestvideo[height<=720][ext=mp4][protocol!*=m3u8]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+      formatId: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]",
       quality: "720p",
       label: "Best Available",
       resolution: "up to 720p",
@@ -288,15 +287,14 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
     });
   }
 
-  // Always add a "Best Free (720p)" sentinel so free users always have a
+  // Always add a "Best Free HD (720p)" sentinel so free users always have a
   // clear highest-quality option even if the source has no discrete 720p format.
   const hasTrueHD = qualities.some((q) => !q.isAudioOnly && q.isHD);
   const hasFree720 = qualities.some((q) => !q.isAudioOnly && !q.isHD && parseInt(q.quality) >= 720);
   if (!hasFree720 || hasTrueHD) {
     const sentinel: QualityOption = {
-      // Explicitly exclude m3u8/HLS protocols to avoid ffmpeg stdout merge failures.
-      // Falls back to any available 720p format as last resort.
-      formatId: "bestvideo[height<=720][ext=mp4][protocol!*=m3u8]+bestaudio[ext=m4a][protocol!*=m3u8]/bestvideo[height<=720][protocol!*=m3u8]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+      // Download uses temp file, so ffmpeg can seek — any protocol is fine.
+      formatId: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]",
       quality: "720p",
       label: "Best Free HD",
       resolution: "up to 720p",
@@ -337,9 +335,9 @@ function qualityLabel(height: number): string {
 // ---- Playback URL resolution ----------------------------------------------
 
 const PLAY_FORMAT_CHAIN = [
-  "bv[ext=mp4][height<=720]+ba[ext=m4a]/b[ext=mp4][height<=720]/b[height<=720]/best[ext=mp4]/best",
-  "best[height<=480]/best[ext=mp4]/best",
-  "best",
+  "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]",
+  "best[ext=mp4][height<=480]/best[height<=480]",
+  "best[ext=mp4]/best",
   "worst",
 ];
 
