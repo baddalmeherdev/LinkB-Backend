@@ -13,8 +13,11 @@ export class YouTubeHandler implements PlatformHandler {
 
   getConfig(): HandlerConfig {
     return {
+      // ios is the most reliable client for Shorts + regular videos on servers.
+      // tv_embedded also works for age-gated content. web/mweb are kept as
+      // last-resort fallbacks — they often fail in server environments.
       extraArgs: [
-        "--extractor-args", "youtube:player_client=web,mweb",
+        "--extractor-args", "youtube:player_client=ios,tv_embedded,web",
       ],
       preferredFormats: [
         "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best",

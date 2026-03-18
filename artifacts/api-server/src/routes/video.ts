@@ -51,11 +51,21 @@ function classifyError(msg: string): { status: number; code: string; message: st
   const m = msg.toLowerCase();
   if (m.includes("unsupported url") || m.includes("no such extractor"))
     return { status: 400, code: "UNSUPPORTED_URL", message: "This link is not supported. Try a different URL from a supported platform." };
-  if (m.includes("private") || m.includes("unavailable") || m.includes("not available"))
+  // Use precise phrases so "Requested format is not available" doesn't falsely
+  // trigger the private-video message.
+  if (
+    m.includes("video is private") ||
+    m.includes("this video is unavailable") ||
+    m.includes("video unavailable") ||
+    m.includes("this video has been removed") ||
+    m.includes("account has been terminated")
+  )
     return { status: 400, code: "PRIVATE_VIDEO", message: "This video is private or unavailable." };
   if (m.includes("geo") || m.includes("not available in your country"))
     return { status: 400, code: "GEO_BLOCKED", message: "This video is geo-restricted and cannot be accessed from this server." };
-  if (m.includes("enoent") || m.includes("not found") || m.includes("yt-dlp"))
+  if (m.includes("requested format is not available") || m.includes("format is not available"))
+    return { status: 400, code: "FORMAT_UNAVAILABLE", message: "Could not fetch this video. Please try a different link or try again later." };
+  if (m.includes("enoent") || m.includes("yt-dlp"))
     return { status: 503, code: "SERVICE_UNAVAILABLE", message: "Downloader service is temporarily unavailable." };
   return { status: 500, code: "EXTRACTION_FAILED", message: "Could not fetch video info. Please check the link and try again." };
 }

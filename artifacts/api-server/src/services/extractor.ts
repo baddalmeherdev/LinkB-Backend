@@ -93,14 +93,17 @@ export async function extractInfo(url: string, handler?: HandlerConfig): Promise
       lastError = err instanceof Error ? err : new Error(String(err));
       const msg = lastError.message.toLowerCase();
 
-      // Fatal errors — no point retrying
+      // Fatal errors — no point retrying with a different user-agent.
+      // Keep these specific so format-level errors ("Requested format is not
+      // available") don't abort the whole retry chain.
       if (
         msg.includes("unsupported url") ||
-        msg.includes("private") ||
-        msg.includes("unavailable") ||
-        msg.includes("not available") ||
-        msg.includes("enoent") ||
-        msg.includes("not found")
+        msg.includes("video is private") ||
+        msg.includes("this video is unavailable") ||
+        msg.includes("video unavailable") ||
+        msg.includes("this video has been removed") ||
+        msg.includes("account has been terminated") ||
+        msg.includes("enoent")
       ) {
         throw lastError;
       }
