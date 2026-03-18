@@ -4,6 +4,7 @@ import { SymbolView } from "expo-symbols";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -11,6 +12,7 @@ const C = Colors.dark;
 export default function TabLayout() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -24,7 +26,8 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderTopColor: C.surfaceBorder,
           elevation: 0,
-          height: isWeb ? 84 : undefined,
+          paddingBottom: isWeb ? 8 : insets.bottom,
+          height: isWeb ? 64 + 8 : 49 + insets.bottom,
         },
         tabBarBackground: () =>
           isIOS ? (
