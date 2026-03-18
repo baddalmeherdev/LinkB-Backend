@@ -544,6 +544,150 @@ router.get("/pipe", async (req: Request, res: Response) => {
   }
 });
 
+// ---- GET /trim ------------------------------------------------------------
+// Downloads the video with yt-dlp, then uses ffmpeg to trim to the
+// specified start/end time range. Streams the trimmed clip to the client.
+// Requires premium (isPremium=true). Free users are blocked.
+
+router.get("/trim", async (req: Request, res: Response) => {
+  const { url, formatId, quality, isPremium, title, startTime, endTime } = req.query as {
+    url?: string; formatId?: string; quality?: string;
+    isPremium?: string; title?: string;
+    startTime?: string; endTime?: string;
+  };
+
+  if (!url || !formatId) {
+    res.status(400).json({ error: "INVALID_REQUEST", message: "url and formatId are required." });
+    return;
+  }
+  if (!validateUrl(url)) {
+    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL." });
+    return;
+  }
+  if (isPremium !== "true") {
+    res.status(403).json({ error: "PREMIUM_REQUIRED", message: "Video trimming requires Premium." });
+    return;
+  }
+
+  const startSec = Math.max(0, parseFloat(startTime ?? "0") || 0);
+  const endSec = parseFloat(endTime ?? "0") || 0;
+
+  if (endSec <= startSec) {
+    res.status(400).json({ error: "INVALID_RANGE", message: "End time must be greater than start time." });
+    return;
+  }
+
+  const isAudioOnly = quality === "Audio Only" || formatId === "bestaudio";
+  const safeTitle = (title ?? "video").replace(/[^a-zA-Z0-9_\- ]/g, "_").substring(0, 60);
+  const filename = `${safeTitle}_trim_${Math.round(startSec)}s_${Math.round(endSec)}s.mp4`;
+
+  const handler = getHandler(url);
+  const cfg = handler.getConfig();
+
+  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
+  const ytdlpFormat = cfg.downloadFormatOverride
+    ? cfg.downloadFormatOverride(formatId, isAudioOnly)
+    : isFullSelector
+      ? formatId
+      : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+
+  const tmpId = randomBytes(8).toString("hex");
+  const tmpRaw = `/tmp/rvtrim-${tmpId}.mp4`;
+  const tmpTrimmed = `/tmp/rvtrim-${tmpId}-cut.mp4`;
+
+  const cleanup = () => {
+    fsp.unlink(tmpRaw).catch(() => {});
+    fsp.unlink(tmpTrimmed).catch(() => {});
+  };
+
+  let clientGone = false;
+  req.on("close", () => { clientGone = true; });
+
+  console.log(`[trim] handler=${handler.name} format=${ytdlpFormat} start=${startSec} end=${endSec}`);
+
+  try {
+    // Phase 1: download full (or partial) video with yt-dlp
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(YTDLP, [
+        ...BASE_YTDLP_ARGS,
+        ...cfg.extraArgs,
+        "-f", ytdlpFormat,
+        "--merge-output-format", "mp4",
+        "-o", tmpRaw,
+        url,
+      ], { stdio: ["ignore", "pipe", "pipe"] });
+
+      proc.stderr.on("data", (d: Buffer) => {
+        const line = d.toString().trim();
+        if (line && !line.startsWith("[debug]")) console.log("[trim-yt-dlp]", line);
+      });
+      req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
+      proc.on("error", reject);
+      proc.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`yt-dlp exited ${code}`));
+      });
+    });
+
+    if (clientGone) { cleanup(); return; }
+
+    // Phase 2: trim with ffmpeg (stream copy — fast, no re-encode)
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn("ffmpeg", [
+        "-y",
+        "-i", tmpRaw,
+        "-ss", String(startSec),
+        "-to", String(endSec),
+        "-c", "copy",
+        "-movflags", "+faststart",
+        tmpTrimmed,
+      ], { stdio: ["ignore", "pipe", "pipe"] });
+
+      proc.stderr.on("data", (d: Buffer) => {
+        const line = d.toString().trim();
+        if (line) console.log("[trim-ffmpeg]", line);
+      });
+      proc.on("error", reject);
+      proc.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg exited ${code}`));
+      });
+    });
+
+    if (clientGone) { cleanup(); return; }
+
+    // Phase 3: stream trimmed file to client
+    const stat = await fsp.stat(tmpTrimmed);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Content-Length", String(stat.size));
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Cache-Control", "no-cache");
+
+    const stream = createReadStream(tmpTrimmed);
+    stream.pipe(res);
+    stream.on("end", () => { cleanup(); });
+    stream.on("error", (e) => {
+      console.error("[trim] stream error:", e);
+      cleanup();
+      if (!res.writableEnded) res.destroy();
+    });
+    req.on("close", () => { stream.destroy(); cleanup(); });
+
+    console.log(`[trim] streaming trimmed clip OK (${stat.size} bytes)`);
+  } catch (err) {
+    cleanup();
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[trim] error:", msg);
+    if (!res.headersSent) {
+      const classified = classifyError(msg);
+      res.status(classified.status).json({ error: classified.code, message: classified.message });
+    } else if (!res.writableEnded) {
+      res.destroy();
+    }
+  }
+});
+
 // ---- GET /update ----------------------------------------------------------
 // Triggers yt-dlp self-update. Run periodically to keep extractors current.
 

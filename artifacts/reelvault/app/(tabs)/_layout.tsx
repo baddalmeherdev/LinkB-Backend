@@ -59,6 +59,18 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="trim"
+        options={{
+          title: "Trim",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="scissors" tintColor={color} size={24} />
+            ) : (
+              <Feather name="scissors" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
         name="browser"
         options={{ href: null }}
       />

@@ -4,7 +4,7 @@ import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -82,6 +82,7 @@ function generateHashtags(title: string, platform: string): string {
 
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { isPremium, addToHistory } = useApp();
   const { autoUrl, shareText } = useLocalSearchParams<{ autoUrl?: string; shareText?: string }>();
   const {
@@ -641,14 +642,11 @@ export default function DownloadScreen() {
   const handleTrim = () => {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert(
-      "Trim Video",
-      "This will open a video trimmer in your browser.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Open", onPress: () => Linking.openURL(`https://clideo.com/cut-video`) },
-      ]
-    );
+    if (!isPremium) {
+      setShowPremiumModal(true);
+      return;
+    }
+    router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl } });
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -933,7 +931,12 @@ export default function DownloadScreen() {
                     <Feather name="scissors" size={18} color={C.gold} />
                   </View>
                   <Text style={styles.toolTitle}>Trim</Text>
-                  <Text style={styles.toolDesc}>Cut video</Text>
+                  <Text style={styles.toolDesc}>{isPremium ? "Cut video" : "Premium"}</Text>
+                  {!isPremium && (
+                    <View style={{ position: "absolute", top: 8, right: 8 }}>
+                      <MaterialCommunityIcons name="crown" size={12} color={C.gold} />
+                    </View>
+                  )}
                 </Pressable>
               </View>
             </View>
