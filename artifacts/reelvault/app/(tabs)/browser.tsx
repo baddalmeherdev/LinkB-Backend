@@ -15,26 +15,28 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
 
-const SITES = [
+const HOME_URL = "https://m.youtube.com";
+
+const SHORTCUTS = [
   { name: "YouTube", url: "https://m.youtube.com", color: "#FF0000", icon: "play-circle" as const },
   { name: "Instagram", url: "https://www.instagram.com", color: "#E1306C", icon: "instagram" as const },
   { name: "TikTok", url: "https://www.tiktok.com", color: "#69C9D0", icon: "video" as const },
   { name: "Facebook", url: "https://m.facebook.com", color: "#1877F2", icon: "facebook" as const },
-  { name: "Twitter/X", url: "https://x.com", color: "#1DA1F2", icon: "twitter" as const },
+  { name: "Twitter", url: "https://x.com", color: "#1DA1F2", icon: "twitter" as const },
   { name: "Reddit", url: "https://www.reddit.com", color: "#FF4500", icon: "message-square" as const },
   { name: "Vimeo", url: "https://vimeo.com", color: "#1AB7EA", icon: "film" as const },
-  { name: "Daily­motion", url: "https://www.dailymotion.com", color: "#0066DC", icon: "tv" as const },
+  { name: "Dailymotion", url: "https://www.dailymotion.com", color: "#0066DC", icon: "tv" as const },
 ];
 
 function normalizeUrl(text: string): string {
   const trimmed = text.trim();
-  if (!trimmed) return "";
+  if (!trimmed) return HOME_URL;
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
   if (trimmed.includes(".") && !trimmed.includes(" ")) return `https://${trimmed}`;
   return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
@@ -45,29 +47,38 @@ function WebBrowserContent() {
   const [inputUrl, setInputUrl] = useState("");
   const [inputFocused, setInputFocused] = useState(false);
 
-  const handleOpenSite = async (url: string) => {
-    await Linking.openURL(url);
+  const handleGo = () => {
+    const trimmed = inputUrl.trim();
+    if (!trimmed) return;
+    const url = normalizeUrl(trimmed);
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    } else {
+      Linking.openURL(url);
+    }
   };
 
-  const handleGoToUrl = () => {
-    const target = normalizeUrl(inputUrl);
-    if (!target) return;
-    Linking.openURL(target);
+  const handleSiteShortcut = (url: string) => {
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    } else {
+      Linking.openURL(url);
+    }
   };
 
   const handlePaste = async () => {
     const text = await Clipboard.getStringAsync();
-    if (text) setInputUrl(text);
+    if (text?.trim()) setInputUrl(text.trim());
   };
 
-  const handleSendToDownloader = () => {
+  const handleDownload = () => {
     const trimmed = inputUrl.trim();
     if (!trimmed) {
-      Alert.alert("Enter a URL", "Paste or type the video page URL first.");
+      Alert.alert("Enter a video URL", "Paste the URL of the video you want to download.");
       return;
     }
-    const target = normalizeUrl(trimmed);
-    router.push({ pathname: "/(tabs)/", params: { autoUrl: target } });
+    const url = normalizeUrl(trimmed);
+    router.push({ pathname: "/(tabs)/", params: { autoUrl: url } });
   };
 
   return (
@@ -76,36 +87,36 @@ function WebBrowserContent() {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      <Animated.View entering={FadeInDown.delay(50)} style={styles.webHero}>
+      <Animated.View entering={FadeInDown.delay(40)} style={styles.webHero}>
         <View style={styles.webHeroIcon}>
-          <Feather name="globe" size={32} color={C.accent} />
+          <Feather name="globe" size={30} color={C.accent} />
         </View>
-        <Text style={styles.webHeroTitle}>Video Browser</Text>
+        <Text style={styles.webHeroTitle}>Browser</Text>
         <Text style={styles.webHeroSub}>
-          Tap a site below to browse, then copy the video URL and paste it here to download
+          Open any site, copy the video link, then paste and download below
         </Text>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(100)} style={styles.urlSection}>
-        <View style={[styles.urlBar, inputFocused && styles.urlBarFocused]}>
-          <Feather name="link-2" size={14} color={C.textMuted} />
+      <Animated.View entering={FadeInDown.delay(80)} style={styles.urlBox}>
+        <View style={[styles.urlInput, inputFocused && styles.urlInputFocused]}>
+          <Feather name="search" size={15} color={C.textMuted} />
           <TextInput
-            style={styles.urlInput}
+            style={styles.urlTextInput}
             value={inputUrl}
             onChangeText={setInputUrl}
             onFocus={() => setInputFocused(true)}
             onBlur={() => setInputFocused(false)}
-            placeholder="Paste video URL here..."
+            placeholder="Search or paste video URL..."
             placeholderTextColor={C.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
             returnKeyType="go"
-            onSubmitEditing={handleSendToDownloader}
+            onSubmitEditing={handleGo}
           />
           {inputUrl.length > 0 && (
-            <Pressable onPress={() => setInputUrl("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="x-circle" size={16} color={C.textMuted} />
+            <Pressable onPress={() => setInputUrl("")} hitSlop={10}>
+              <Feather name="x-circle" size={15} color={C.textMuted} />
             </Pressable>
           )}
         </View>
@@ -114,53 +125,51 @@ function WebBrowserContent() {
             <Feather name="clipboard" size={14} color={C.textSecondary} />
             <Text style={styles.pasteBtnText}>Paste URL</Text>
           </Pressable>
+          <Pressable style={styles.goBtn} onPress={handleGo} disabled={!inputUrl.trim()}>
+            <Feather name="external-link" size={14} color="#fff" />
+            <Text style={styles.goBtnText}>Open Site</Text>
+          </Pressable>
           <Pressable
-            style={[styles.downloadBtn, !inputUrl.trim() && styles.downloadBtnDisabled]}
-            onPress={handleSendToDownloader}
+            style={[styles.dlBtn, !inputUrl.trim() && { opacity: 0.4 }]}
+            onPress={handleDownload}
             disabled={!inputUrl.trim()}
           >
             <Feather name="download-cloud" size={14} color="#fff" />
-            <Text style={styles.downloadBtnText}>Download Video</Text>
+            <Text style={styles.dlBtnText}>Download</Text>
           </Pressable>
         </View>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(150)} style={styles.sitesSection}>
-        <Text style={styles.sectionLabel}>Open a site to browse videos</Text>
+      <Animated.View entering={FadeInDown.delay(120)} style={styles.shortcutsSection}>
+        <Text style={styles.sectionLabel}>Quick Open</Text>
         <View style={styles.sitesGrid}>
-          {SITES.map((site) => (
+          {SHORTCUTS.map((site) => (
             <Pressable
               key={site.name}
               style={styles.siteCard}
-              onPress={() => handleOpenSite(site.url)}
+              onPress={() => handleSiteShortcut(site.url)}
             >
-              <View style={[styles.siteIcon, { backgroundColor: site.color + "20", borderColor: site.color + "40" }]}>
-                <Feather name={site.icon} size={20} color={site.color} />
+              <View style={[styles.siteIcon, { backgroundColor: site.color + "22", borderColor: site.color + "55" }]}>
+                <Feather name={site.icon} size={22} color={site.color} />
               </View>
-              <Text style={styles.siteName} numberOfLines={1}>{site.name}</Text>
-              <Feather name="external-link" size={10} color={C.textMuted} />
+              <Text style={styles.siteName}>{site.name}</Text>
             </Pressable>
           ))}
         </View>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(200)} style={styles.helpCard}>
-        <View style={styles.helpRow}>
-          <View style={styles.helpStep}>
-            <View style={styles.helpNum}><Text style={styles.helpNumText}>1</Text></View>
-            <Text style={styles.helpText}>Tap a site above to open it in your browser</Text>
+      <Animated.View entering={FadeInDown.delay(160)} style={styles.stepsCard}>
+        <Text style={styles.stepsTitle}>How to download a video</Text>
+        {[
+          { n: "1", text: "Tap a site above — it opens in your browser" },
+          { n: "2", text: "Find your video and copy its URL from the address bar" },
+          { n: "3", text: "Come back here, paste the URL above, and tap Download" },
+        ].map((s) => (
+          <View key={s.n} style={styles.step}>
+            <View style={styles.stepNum}><Text style={styles.stepNumText}>{s.n}</Text></View>
+            <Text style={styles.stepText}>{s.text}</Text>
           </View>
-          <View style={styles.helpConnector} />
-          <View style={styles.helpStep}>
-            <View style={[styles.helpNum, { backgroundColor: "#1A1A3A" }]}><Text style={[styles.helpNumText, { color: C.accent }]}>2</Text></View>
-            <Text style={styles.helpText}>Find your video and copy its URL</Text>
-          </View>
-          <View style={styles.helpConnector} />
-          <View style={styles.helpStep}>
-            <View style={[styles.helpNum, { backgroundColor: "#0D2A1A" }]}><Text style={[styles.helpNumText, { color: "#4ADE80" }]}>3</Text></View>
-            <Text style={styles.helpText}>Paste the URL above and tap Download</Text>
-          </View>
-        </View>
+        ))}
       </Animated.View>
     </ScrollView>
   );
@@ -172,57 +181,45 @@ export default function BrowserScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [inputUrl, setInputUrl] = useState("");
-  const [currentUrl, setCurrentUrl] = useState("https://m.youtube.com");
+  const [currentUrl, setCurrentUrl] = useState(HOME_URL);
   const [loading, setLoading] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
-  const [showStartPage, setShowStartPage] = useState(true);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const webviewRef = useRef<any>(null);
 
-  const handleNavigate = useCallback((urlText?: string) => {
-    const raw = urlText ?? inputUrl;
-    if (!raw.trim()) return;
-    const target = normalizeUrl(raw);
-    setCurrentUrl(target);
-    setInputUrl(target);
-    setShowStartPage(false);
+  const handleNavigate = useCallback((target: string) => {
+    const url = normalizeUrl(target);
+    setCurrentUrl(url);
+    setInputUrl(url);
+    setShowShortcuts(false);
     setLoading(true);
-  }, [inputUrl]);
+  }, []);
 
-  const handleGoBack = () => {
-    if (webviewRef.current?.goBack) webviewRef.current.goBack();
+  const handleSubmit = () => {
+    if (inputUrl.trim()) handleNavigate(inputUrl);
   };
 
-  const handleGoForward = () => {
-    if (webviewRef.current?.goForward) webviewRef.current.goForward();
-  };
-
-  const handleReload = () => {
-    if (webviewRef.current?.reload) webviewRef.current.reload();
-  };
-
-  const handleHome = () => {
-    setShowStartPage(true);
-    setInputUrl("");
-  };
+  const handleGoBack = () => webviewRef.current?.goBack?.();
+  const handleGoForward = () => webviewRef.current?.goForward?.();
+  const handleReload = () => webviewRef.current?.reload?.();
 
   const handleDownloadCurrentPage = () => {
-    const url = showStartPage ? "" : currentUrl;
-    if (!url) {
+    if (showShortcuts) {
       Alert.alert("No page open", "Open a video page first, then tap Download.");
       return;
     }
     Alert.alert(
       "Download Video",
-      `Send this page to the downloader?\n\n${url}`,
+      `Download from:\n${currentUrl}`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Download",
           onPress: () => {
-            router.push({ pathname: "/(tabs)/", params: { autoUrl: url } });
+            router.push({ pathname: "/(tabs)/", params: { autoUrl: currentUrl } });
           },
         },
       ]
@@ -232,78 +229,95 @@ export default function BrowserScreen() {
   if (Platform.OS === "web") {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <LinearGradient
-          colors={["#0A0A1E", C.background]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 0.3 }}
-        />
+        <LinearGradient colors={["#0A0A1E", C.background]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.3 }} />
         <WebBrowserContent />
       </View>
     );
   }
 
   let WebView: any = null;
-  try {
-    WebView = require("react-native-webview").WebView;
-  } catch {}
+  try { WebView = require("react-native-webview").WebView; } catch {}
 
   if (!WebView) {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <LinearGradient
-          colors={["#0A0A1E", C.background]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 0.3 }}
-        />
-        <WebBrowserContent />
+        <LinearGradient colors={["#0A0A1E", C.background]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.3 }} />
+        <View style={styles.toolbar}>
+          <View style={[styles.urlBarFull, styles.urlBarFocusedNone]}>
+            <Feather name="globe" size={14} color={C.textMuted} />
+            <TextInput
+              style={styles.urlTextInputNative}
+              value={inputUrl}
+              onChangeText={setInputUrl}
+              onSubmitEditing={handleSubmit}
+              placeholder="Search or enter URL..."
+              placeholderTextColor={C.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              returnKeyType="go"
+              selectTextOnFocus
+            />
+          </View>
+        </View>
+        <ScrollView contentContainerStyle={styles.nativeShortcutsContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.shortcutsSection}>
+            <Text style={styles.sectionLabel}>Popular Sites</Text>
+            <View style={styles.sitesGrid}>
+              {SHORTCUTS.map((site) => (
+                <Pressable key={site.name} style={styles.siteCard} onPress={() => Linking.openURL(site.url)}>
+                  <View style={[styles.siteIcon, { backgroundColor: site.color + "22", borderColor: site.color + "55" }]}>
+                    <Feather name={site.icon} size={22} color={site.color} />
+                  </View>
+                  <Text style={styles.siteName}>{site.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <View style={styles.stepsCard}>
+            <Text style={styles.stepsTitle}>How to download a video</Text>
+            {[
+              { n: "1", text: "Tap a site to open it" },
+              { n: "2", text: "Copy the video page URL" },
+              { n: "3", text: "Go to Download tab and paste the URL" },
+            ].map((s) => (
+              <View key={s.n} style={styles.step}>
+                <View style={styles.stepNum}><Text style={styles.stepNumText}>{s.n}</Text></View>
+                <Text style={styles.stepText}>{s.text}</Text>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
-      <LinearGradient
-        colors={["#0A0A1E", C.background]}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 0.3 }}
-      />
+      <LinearGradient colors={["#0A0A1E", C.background]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 0, y: 0.3 }} />
+
       <View style={styles.toolbar}>
-        <Pressable style={styles.navBtn} onPress={handleHome}>
-          <Feather name="home" size={16} color={C.textSecondary} />
+        <Pressable style={styles.navBtn} onPress={() => setShowShortcuts((v) => !v)}>
+          <Feather name={showShortcuts ? "x" : "grid"} size={16} color={C.textSecondary} />
         </Pressable>
-        <Pressable
-          style={[styles.navBtn, (!canGoBack || showStartPage) && styles.navBtnDisabled]}
-          onPress={handleGoBack}
-          disabled={!canGoBack || showStartPage}
-        >
-          <Feather name="arrow-left" size={18} color={(!canGoBack || showStartPage) ? C.textMuted : C.text} />
+        <Pressable style={[styles.navBtn, !canGoBack && styles.navBtnOff]} onPress={handleGoBack} disabled={!canGoBack || showShortcuts}>
+          <Feather name="arrow-left" size={17} color={canGoBack && !showShortcuts ? C.text : C.textMuted} />
         </Pressable>
-        <Pressable
-          style={[styles.navBtn, (!canGoForward || showStartPage) && styles.navBtnDisabled]}
-          onPress={handleGoForward}
-          disabled={!canGoForward || showStartPage}
-        >
-          <Feather name="arrow-right" size={18} color={(!canGoForward || showStartPage) ? C.textMuted : C.text} />
+        <Pressable style={[styles.navBtn, !canGoForward && styles.navBtnOff]} onPress={handleGoForward} disabled={!canGoForward || showShortcuts}>
+          <Feather name="arrow-right" size={17} color={canGoForward && !showShortcuts ? C.text : C.textMuted} />
         </Pressable>
-        <Pressable
-          style={[styles.navBtn, showStartPage && styles.navBtnDisabled]}
-          onPress={handleReload}
-          disabled={showStartPage}
-        >
-          <Feather name="refresh-cw" size={16} color={showStartPage ? C.textMuted : C.textSecondary} />
+        <Pressable style={styles.navBtn} onPress={handleReload} disabled={showShortcuts}>
+          <Feather name="refresh-cw" size={15} color={showShortcuts ? C.textMuted : C.textSecondary} />
         </Pressable>
-        <View style={[styles.urlBar, inputFocused && styles.urlBarFocused]}>
-          <Feather name="globe" size={14} color={C.textMuted} />
+        <View style={[styles.urlBarFull, inputFocused && styles.urlBarActive]}>
+          <Feather name="globe" size={13} color={C.textMuted} />
           <TextInput
-            style={styles.urlInput}
-            value={inputFocused ? inputUrl : (showStartPage ? "" : currentUrl)}
+            style={styles.urlTextInputNative}
+            value={inputFocused ? inputUrl : (showShortcuts ? "" : currentUrl)}
             onChangeText={setInputUrl}
-            onFocus={() => { setInputFocused(true); setInputUrl(showStartPage ? "" : currentUrl); }}
+            onFocus={() => { setInputFocused(true); setInputUrl(showShortcuts ? "" : currentUrl); }}
             onBlur={() => setInputFocused(false)}
-            onSubmitEditing={() => handleNavigate()}
+            onSubmitEditing={handleSubmit}
             placeholder="Search or enter URL..."
             placeholderTextColor={C.textMuted}
             autoCapitalize="none"
@@ -312,33 +326,24 @@ export default function BrowserScreen() {
             returnKeyType="go"
             selectTextOnFocus
           />
-          {loading && !showStartPage && <ActivityIndicator size="small" color={C.accent} style={{ marginRight: 4 }} />}
+          {loading && !showShortcuts && <ActivityIndicator size="small" color={C.accent} />}
         </View>
       </View>
 
-      {showStartPage ? (
-        <ScrollView contentContainerStyle={styles.nativeStartContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.webHero}>
-            <View style={styles.webHeroIcon}>
-              <Feather name="globe" size={32} color={C.accent} />
+      {showShortcuts ? (
+        <ScrollView contentContainerStyle={styles.nativeShortcutsContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.shortcutsSection}>
+            <Text style={styles.sectionLabel}>Popular Sites</Text>
+            <View style={styles.sitesGrid}>
+              {SHORTCUTS.map((site) => (
+                <Pressable key={site.name} style={styles.siteCard} onPress={() => handleNavigate(site.url)}>
+                  <View style={[styles.siteIcon, { backgroundColor: site.color + "22", borderColor: site.color + "55" }]}>
+                    <Feather name={site.icon} size={22} color={site.color} />
+                  </View>
+                  <Text style={styles.siteName}>{site.name}</Text>
+                </Pressable>
+              ))}
             </View>
-            <Text style={styles.webHeroTitle}>Video Browser</Text>
-            <Text style={styles.webHeroSub}>Browse any site and download videos with one tap</Text>
-          </View>
-          <Text style={styles.sectionLabel}>Popular video sites</Text>
-          <View style={styles.sitesGrid}>
-            {SITES.map((site) => (
-              <Pressable
-                key={site.name}
-                style={styles.siteCard}
-                onPress={() => handleNavigate(site.url)}
-              >
-                <View style={[styles.siteIcon, { backgroundColor: site.color + "20", borderColor: site.color + "40" }]}>
-                  <Feather name={site.icon} size={20} color={site.color} />
-                </View>
-                <Text style={styles.siteName} numberOfLines={1}>{site.name}</Text>
-              </Pressable>
-            ))}
           </View>
         </ScrollView>
       ) : (
@@ -348,12 +353,12 @@ export default function BrowserScreen() {
           style={styles.webview}
           onLoadStart={() => setLoading(true)}
           onLoadEnd={() => setLoading(false)}
-          onNavigationStateChange={(navState: any) => {
-            setCanGoBack(navState.canGoBack);
-            setCanGoForward(navState.canGoForward);
-            if (navState.url && !inputFocused) {
-              setCurrentUrl(navState.url);
-              setInputUrl(navState.url);
+          onNavigationStateChange={(s: any) => {
+            setCanGoBack(s.canGoBack);
+            setCanGoForward(s.canGoForward);
+            if (s.url && !inputFocused) {
+              setCurrentUrl(s.url);
+              setInputUrl(s.url);
             }
           }}
           allowsBackForwardNavigationGestures
@@ -369,12 +374,12 @@ export default function BrowserScreen() {
       )}
 
       <Pressable
-        style={[styles.downloadBar, { paddingBottom: insets.bottom > 0 ? insets.bottom : 14 }]}
+        style={[styles.downloadBar, { paddingBottom: Math.max(insets.bottom, 14) }]}
         onPress={handleDownloadCurrentPage}
       >
         <Feather name="download-cloud" size={16} color="#fff" />
         <Text style={styles.downloadBarText}>Download video from this page</Text>
-        <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.7)" />
+        <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.6)" />
       </Pressable>
     </View>
   );
@@ -386,8 +391,8 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
     gap: 5,
     borderBottomWidth: 1,
     borderBottomColor: C.surfaceBorder,
@@ -401,183 +406,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  navBtnDisabled: { opacity: 0.35 },
-  urlBar: {
+  navBtnOff: { opacity: 0.3 },
+  urlBarFull: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 7,
     backgroundColor: C.surfaceElevated,
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 8,
     borderWidth: 1.5,
     borderColor: C.surfaceBorder,
   },
-  urlBarFocused: { borderColor: C.accent },
-  urlInput: {
+  urlBarFocusedNone: {},
+  urlBarActive: { borderColor: C.accent },
+  urlTextInputNative: {
     flex: 1,
     color: C.text,
     fontSize: 13,
     fontFamily: "Inter_400Regular",
-  },
-
-  webContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 120,
-    gap: 24,
-  },
-  nativeStartContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 120,
-    gap: 20,
-  },
-
-  webHero: {
-    alignItems: "center",
-    gap: 10,
-  },
-  webHeroIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 20,
-    backgroundColor: "#0D1A2A",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: C.accent + "40",
-    marginBottom: 4,
-  },
-  webHeroTitle: {
-    color: C.text,
-    fontSize: 22,
-    fontFamily: "Inter_700Bold",
-    textAlign: "center",
-  },
-  webHeroSub: {
-    color: C.textSecondary,
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-    lineHeight: 21,
-    maxWidth: 300,
-  },
-
-  urlSection: { gap: 10 },
-  urlBar2: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: C.surfaceElevated,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1.5,
-    borderColor: C.surfaceBorder,
-  },
-  urlActions: { flexDirection: "row", gap: 10 },
-  pasteBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: C.surfaceElevated,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
-  },
-  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium" },
-  downloadBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    backgroundColor: C.accent,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  downloadBtnDisabled: { opacity: 0.4 },
-  downloadBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_700Bold" },
-
-  sectionLabel: {
-    color: C.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  sitesSection: { gap: 12 },
-  sitesGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  siteCard: {
-    width: "22%",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: C.surfaceElevated,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
-  },
-  siteIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-  siteName: {
-    color: C.textSecondary,
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
-    textAlign: "center",
-  },
-
-  helpCard: {
-    backgroundColor: C.surfaceElevated,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: C.surfaceBorder,
-  },
-  helpRow: { gap: 14 },
-  helpStep: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  helpNum: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "#2A1A00",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-    flexShrink: 0,
-  },
-  helpNumText: { color: "#F59E0B", fontSize: 12, fontFamily: "Inter_700Bold" },
-  helpText: {
-    flex: 1,
-    color: C.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
-  },
-  helpConnector: {
-    width: 1,
-    height: 12,
-    backgroundColor: C.surfaceBorder,
-    marginLeft: 12,
   },
 
   webview: { flex: 1 },
@@ -595,7 +443,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     backgroundColor: C.accent,
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 20,
   },
   downloadBarText: {
@@ -605,5 +453,157 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
   },
-  iframeWrap: { flex: 1, backgroundColor: "#fff" },
+
+  nativeShortcutsContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 100,
+    gap: 20,
+  },
+
+  webContent: {
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 120,
+    gap: 22,
+  },
+
+  webHero: { alignItems: "center", gap: 10 },
+  webHeroIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    backgroundColor: "#0D1A2A",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.accent + "44",
+    marginBottom: 4,
+  },
+  webHeroTitle: { color: C.text, fontSize: 22, fontFamily: "Inter_700Bold" },
+  webHeroSub: {
+    color: C.textSecondary,
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    lineHeight: 21,
+    maxWidth: 320,
+  },
+
+  urlBox: { gap: 10 },
+  urlInput: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 13,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderWidth: 1.5,
+    borderColor: C.surfaceBorder,
+  },
+  urlInputFocused: { borderColor: C.accent },
+  urlTextInput: {
+    flex: 1,
+    color: C.text,
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+  },
+  urlActions: { flexDirection: "row", gap: 8 },
+  pasteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: C.surfaceElevated,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+  },
+  pasteBtnText: { color: C.textSecondary, fontSize: 12, fontFamily: "Inter_500Medium" },
+  goBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#1A3050",
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: "#2A5080",
+  },
+  goBtnText: { color: "#60A5FA", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  dlBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    backgroundColor: C.accent,
+    paddingVertical: 11,
+    borderRadius: 11,
+  },
+  dlBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_700Bold" },
+
+  shortcutsSection: { gap: 12 },
+  sectionLabel: {
+    color: C.textSecondary,
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  sitesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  siteCard: {
+    width: "22%",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+  },
+  siteIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  siteName: {
+    color: C.textSecondary,
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
+  },
+
+  stepsCard: {
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 16,
+    padding: 18,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+  },
+  stepsTitle: { color: C.text, fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
+  step: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  stepNum: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#2A1800",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  stepNumText: { color: "#F59E0B", fontSize: 11, fontFamily: "Inter_700Bold" },
+  stepText: { flex: 1, color: C.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
 });
