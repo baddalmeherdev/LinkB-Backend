@@ -278,53 +278,95 @@ router.get("/play", async (req: Request, res: Response) => {
 
   console.log(`[play] Getting source URL for: ${url}`);
   try {
-    const { stdout } = await execFileAsync(YTDLP, [
+    // Get direct URL + content-type from yt-dlp
+    const { stdout: urlOut } = await execFileAsync(YTDLP, [
       "--no-warnings",
       "--no-playlist",
-      "-f", "best[height<=480]/best[height<=360]/best",
+      "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
       "--get-url",
+      "--get-filename",
+      "-o", "%(ext)s",
       url,
-    ], { timeout: 30000 });
+    ], { timeout: 40000 });
 
-    const sourceUrl = stdout.trim().split("\n").filter(Boolean)[0];
+    const lines = urlOut.trim().split("\n").filter(Boolean);
+    // yt-dlp outputs: ext\nurl (or just url if single format)
+    let sourceUrl = "";
+    if (lines.length >= 2) {
+      // Could be ext then url, or two urls (video+audio separate)
+      if (lines[0].startsWith("http")) {
+        // two separate stream URLs (video+audio) — fall through to fallback
+        sourceUrl = "";
+      } else {
+        sourceUrl = lines[1];
+      }
+    } else if (lines.length === 1) {
+      sourceUrl = lines[0];
+    }
+
+    if (!sourceUrl || !sourceUrl.startsWith("http")) {
+      // Fallback: just get the best URL without filename
+      const { stdout: fallbackOut } = await execFileAsync(YTDLP, [
+        "--no-warnings",
+        "--no-playlist",
+        "-f", "best[height<=720]/best",
+        "--get-url",
+        url,
+      ], { timeout: 40000 });
+      sourceUrl = fallbackOut.trim().split("\n").filter(Boolean)[0] ?? "";
+    }
+
     if (!sourceUrl || !sourceUrl.startsWith("http")) {
       throw new Error("No source URL returned");
     }
 
-    console.log(`[play] Streaming via ffmpeg from: ${sourceUrl.substring(0, 80)}...`);
+    console.log(`[play] Proxying source: ${sourceUrl.substring(0, 80)}...`);
 
-    res.setHeader("Content-Type", "video/mp4");
-    res.setHeader("Cache-Control", "no-cache");
+    // Proxy the video with range request support (use global fetch from Node 18+)
+    const rangeHeader = req.headers["range"];
+    const proxyHeaders: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "*/*",
+      "Accept-Encoding": "identity",
+    };
+    if (rangeHeader) {
+      proxyHeaders["Range"] = rangeHeader;
+    }
+
+    const upstream = await fetch(sourceUrl, { headers: proxyHeaders });
+
+    if (!upstream.ok && upstream.status !== 206) {
+      throw new Error(`Upstream returned ${upstream.status}`);
+    }
+
+    const contentType = upstream.headers.get("content-type") ?? "video/mp4";
+    const contentLength = upstream.headers.get("content-length");
+    const contentRange = upstream.headers.get("content-range");
+    const acceptRanges = upstream.headers.get("accept-ranges");
+
     res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Content-Type", contentType);
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    if (contentRange) res.setHeader("Content-Range", contentRange);
+    if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
+    else res.setHeader("Accept-Ranges", "bytes");
 
-    const ffProc = spawn(FFMPEG, [
-      "-reconnect", "1",
-      "-reconnect_streamed", "1",
-      "-reconnect_delay_max", "5",
-      "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      "-i", sourceUrl,
-      "-c", "copy",
-      "-f", "mp4",
-      "-movflags", "frag_keyframe+empty_moov+faststart",
-      "pipe:1",
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    res.status(upstream.status);
 
-    ffProc.stderr.on("data", (d: Buffer) => {
-      const line = d.toString().trim();
-      if (line && !line.startsWith("frame=")) console.log("[ffmpeg play]", line);
+    if (!upstream.body) {
+      throw new Error("No response body from upstream");
+    }
+
+    // Convert Web ReadableStream → Node.js Readable for piping
+    const { Readable } = await import("stream");
+    const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
+
+    req.on("close", () => {
+      try { nodeStream.destroy(); } catch {}
     });
 
-    ffProc.stdout.pipe(res);
-    req.on("close", () => ffProc.kill("SIGTERM"));
-
-    ffProc.on("error", (err) => {
-      console.error("[play ffmpeg] error:", err);
-      if (!res.headersSent) res.status(500).json({ error: "FFMPEG_ERROR", message: "Could not stream video." });
-    });
-
-    ffProc.on("close", (code) => {
-      if (code !== 0 && code !== null) console.error(`[play] ffmpeg exited with code ${code}`);
-    });
+    nodeStream.pipe(res);
 
   } catch (err) {
     console.error("[play] error:", err);
