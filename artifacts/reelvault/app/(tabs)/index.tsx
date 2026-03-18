@@ -91,6 +91,7 @@ export default function DownloadScreen() {
     getStreamUrl,
     isLoadingPreview,
     isLoadingInfo,
+    isSlowRequest,
     error,
     clearError,
   } = useVideoApi();
@@ -568,9 +569,13 @@ export default function DownloadScreen() {
             >
               {isBusy ? (
                 <>
-                  <Feather name="loader" size={16} color="#fff" />
+                  <ActivityIndicator size="small" color="#fff" />
                   <Text style={styles.fetchBtnText}>
-                    {isLoadingPreview ? "Previewing..." : "Loading..."}
+                    {isSlowRequest
+                      ? "Processing…"
+                      : isLoadingPreview
+                      ? "Previewing…"
+                      : "Loading…"}
                   </Text>
                 </>
               ) : (
@@ -587,6 +592,19 @@ export default function DownloadScreen() {
           <Animated.View entering={FadeIn} style={styles.errorBox}>
             <Feather name="alert-circle" size={16} color={C.error} />
             <Text style={styles.errorText}>{error}</Text>
+          </Animated.View>
+        ) : null}
+
+        {isSlowRequest && isBusy ? (
+          <Animated.View entering={FadeIn} style={styles.slowRequestBox}>
+            <ActivityIndicator size="small" color={C.accent} />
+            <View style={styles.slowRequestText}>
+              <Text style={styles.slowRequestTitle}>Processing, please wait…</Text>
+              <Text style={styles.slowRequestSub}>
+                Fetching video info can take up to 30 seconds.
+                The app will retry automatically if needed.
+              </Text>
+            </View>
           </Animated.View>
         ) : null}
 
@@ -972,6 +990,14 @@ const styles = StyleSheet.create({
     marginBottom: 16, borderWidth: 1, borderColor: "#4A0000",
   },
   errorText: { flex: 1, color: C.error, fontSize: 13, fontFamily: "Inter_400Regular" },
+  slowRequestBox: {
+    flexDirection: "row", alignItems: "flex-start", gap: 12,
+    backgroundColor: "#0D1A2E", borderRadius: 10, padding: 14,
+    marginBottom: 16, borderWidth: 1, borderColor: "#1E3A5F",
+  },
+  slowRequestText: { flex: 1, gap: 3 },
+  slowRequestTitle: { color: C.accent, fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  slowRequestSub: { color: C.textMuted, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
   skeletonWrap: { marginBottom: 16 },
   previewSection: { gap: 12, marginBottom: 4 },
   getFormatsBtn: {

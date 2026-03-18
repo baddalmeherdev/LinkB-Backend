@@ -61,10 +61,72 @@ function classifyError(msg: string): { status: number; code: string; message: st
   return { status: 500, code: "EXTRACTION_FAILED", message: "Could not fetch video info. Please check the link and try again." };
 }
 
+// ---- Keep-alive heartbeat helper ------------------------------------------
+// yt-dlp can take 10-45 seconds on slow connections. Without any bytes flowing,
+// the Replit proxy (and some clients) will abort the connection at ~6 seconds.
+// This helper solves that by flushing a JSON-legal whitespace byte every 2 s
+// while the async work runs, keeping the connection alive.
+//
+// CONTRACT:
+//  - After HEARTBEAT_DELAY_MS the response is committed to HTTP 200 + chunked.
+//  - On success the result JSON is streamed as the final chunk.
+//  - On error the error JSON is streamed (callers must check body for .error).
+//  - Before HEARTBEAT_DELAY_MS, nothing is written — caller keeps full control
+//    of status codes (returns usedHeartbeat=false).
+
+const HEARTBEAT_DELAY_MS = 3_000;
+const HEARTBEAT_INTERVAL_MS = 2_000;
+
+async function withHeartbeat<T>(
+  res: Response,
+  promise: Promise<T>,
+): Promise<{ result: T | null; errInfo: ReturnType<typeof classifyError> | null; usedHeartbeat: boolean }> {
+  let usedHeartbeat = false;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+  const startHeartbeat = () => {
+    if (usedHeartbeat || res.writableEnded) return;
+    usedHeartbeat = true;
+    // Commit headers now — status code is locked to 200 from this point.
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Transfer-Encoding", "chunked");
+    res.setHeader("X-Accel-Buffering", "no"); // Prevent nginx/proxy buffering
+    res.status(200);
+    heartbeatInterval = setInterval(() => {
+      try { if (!res.writableEnded) res.write(" "); } catch { /* ignore */ }
+    }, HEARTBEAT_INTERVAL_MS);
+  };
+
+  const delayTimer = setTimeout(startHeartbeat, HEARTBEAT_DELAY_MS);
+
+  try {
+    const result = await promise;
+    clearTimeout(delayTimer);
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    return { result, errInfo: null, usedHeartbeat };
+  } catch (err) {
+    clearTimeout(delayTimer);
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    const msg = err instanceof Error ? err.message : String(err);
+    return { result: null, errInfo: classifyError(msg), usedHeartbeat };
+  }
+}
+
+// Finish a heartbeat-wrapped response: stream result or error JSON.
+function endHeartbeat(res: Response, usedHeartbeat: boolean, data: object, status = 200): void {
+  if (res.writableEnded) return;
+  if (usedHeartbeat) {
+    res.end(JSON.stringify(data));
+  } else {
+    res.status(status).json(data);
+  }
+}
+
 
 // ---- POST /preview --------------------------------------------------------
 // Quick metadata fetch: title, thumbnail, duration.
 // Results are cached for 5 minutes.
+// Uses keep-alive heartbeat to prevent proxy timeouts on slow yt-dlp runs.
 
 router.post("/preview", async (req: Request, res: Response) => {
   const ip = getClientIp(req);
@@ -83,36 +145,41 @@ router.post("/preview", async (req: Request, res: Response) => {
     return;
   }
 
-  // Cache hit
+  // Cache hit — respond immediately, no heartbeat needed.
   const cached = previewCache.get<object>(url);
   if (cached) { res.json(cached); return; }
 
-  try {
-    const handler = getHandler(url);
-    console.log(`[preview] handler=${handler.name} url=${url}`);
+  const handler = getHandler(url);
+  console.log(`[preview] handler=${handler.name} url=${url}`);
 
-    const info = await extractInfo(url, handler.getConfig());
-    const result = {
-      title: info.title,
-      thumbnail: info.thumbnail,
-      duration: info.duration,
-      uploader: info.uploader,
-      platform: detectPlatform(url),
-    };
+  const { result, errInfo, usedHeartbeat } = await withHeartbeat(
+    res,
+    (async () => {
+      const info = await extractInfo(url, handler.getConfig());
+      return {
+        title: info.title,
+        thumbnail: info.thumbnail,
+        duration: info.duration,
+        uploader: info.uploader,
+        platform: detectPlatform(url),
+      };
+    })(),
+  );
 
-    previewCache.set(url, result);
-    res.json(result);
-  } catch (err) {
-    console.error("[preview] error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    const { status, code, message } = classifyError(msg);
-    res.status(status).json({ error: code, message });
+  if (errInfo) {
+    console.error("[preview] error:", errInfo.code);
+    endHeartbeat(res, usedHeartbeat, { error: errInfo.code, message: errInfo.message }, errInfo.status);
+    return;
   }
+
+  previewCache.set(url, result!);
+  endHeartbeat(res, usedHeartbeat, result!);
 });
 
 // ---- POST /info -----------------------------------------------------------
 // Full format listing with quality options.
 // Results are cached for 3 minutes.
+// Uses keep-alive heartbeat to prevent proxy timeouts on slow yt-dlp runs.
 
 router.post("/info", async (req: Request, res: Response) => {
   const ip = getClientIp(req);
@@ -131,34 +198,38 @@ router.post("/info", async (req: Request, res: Response) => {
     return;
   }
 
+  // Cache hit — respond immediately, no heartbeat needed.
   const cached = infoCache.get<object>(url);
   if (cached) { res.json(cached); return; }
 
-  try {
-    const handler = getHandler(url);
-    console.log(`[info] handler=${handler.name} url=${url}`);
+  const handler = getHandler(url);
+  console.log(`[info] handler=${handler.name} url=${url}`);
 
-    const info = await extractInfo(url, handler.getConfig());
-    const qualities = processQualities(info);
+  const { result, errInfo, usedHeartbeat } = await withHeartbeat(
+    res,
+    (async () => {
+      const info = await extractInfo(url, handler.getConfig());
+      const qualities = processQualities(info);
+      return {
+        title: info.title,
+        thumbnail: info.thumbnail,
+        duration: info.duration,
+        uploader: info.uploader,
+        platform: detectPlatform(url),
+        qualities,
+        originalUrl: url,
+      };
+    })(),
+  );
 
-    const result = {
-      title: info.title,
-      thumbnail: info.thumbnail,
-      duration: info.duration,
-      uploader: info.uploader,
-      platform: detectPlatform(url),
-      qualities,
-      originalUrl: url,
-    };
-
-    infoCache.set(url, result);
-    res.json(result);
-  } catch (err) {
-    console.error("[info] error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    const { status, code, message } = classifyError(msg);
-    res.status(status).json({ error: code, message });
+  if (errInfo) {
+    console.error("[info] error:", errInfo.code);
+    endHeartbeat(res, usedHeartbeat, { error: errInfo.code, message: errInfo.message }, errInfo.status);
+    return;
   }
+
+  infoCache.set(url, result!);
+  endHeartbeat(res, usedHeartbeat, result!);
 });
 
 // ---- GET /play ------------------------------------------------------------
