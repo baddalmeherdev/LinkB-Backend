@@ -111,7 +111,7 @@ export default function PremiumScreen() {
   const [utr, setUtr] = useState("");
   const [utrError, setUtrError] = useState("");
   const [utrFocused, setUtrFocused] = useState(false);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 8 : insets.top;
 
   const handlePayViaUPI = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

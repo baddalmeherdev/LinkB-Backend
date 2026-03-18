@@ -128,7 +128,7 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { history, removeFromHistory, clearHistory } = useApp();
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 8 : insets.top;
 
   const [playerUri, setPlayerUri] = useState<string | null>(null);
   const [playerTitle, setPlayerTitle] = useState<string>("");

@@ -649,7 +649,7 @@ export default function DownloadScreen() {
     router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl } });
   };
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 8 : insets.top;
   const isBusy = isLoadingPreview || isLoadingInfo;
 
   return (

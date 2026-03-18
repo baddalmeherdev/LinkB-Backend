@@ -72,7 +72,7 @@ export default function TrimScreen() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 8 : insets.top;
 
   const loadVideo = useCallback(async (u: string) => {
     const info = await fetchVideoInfo(u);
