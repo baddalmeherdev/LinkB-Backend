@@ -448,6 +448,24 @@ export default function DownloadScreen() {
     Alert.alert("Link Copied!", "Video URL copied to clipboard.");
   };
 
+  // One-click download — picks the best accessible quality automatically
+  const handleQuickDownload = async () => {
+    if (!videoInfo || isDownloading) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Pick best quality: premium → any, free → best non-HD
+    const available = videoInfo.qualities.filter(
+      (q) => !q.isAudioOnly && (isPremium || !q.isHD)
+    );
+    if (available.length === 0) {
+      setShowPremiumModal(true);
+      return;
+    }
+    // Highest resolution in allowed tier
+    const best = available.sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0))[0];
+    await handleDownload(best);
+  };
+
   const handleCaption = () => {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -701,6 +719,40 @@ export default function DownloadScreen() {
               info={videoInfo}
               onPlay={() => handlePlay(videoInfo.originalUrl)}
             />
+
+            {/* ⚡ One-click download button */}
+            <Pressable
+              style={[styles.quickDownloadBtn, isDownloading && styles.quickDownloadBtnBusy]}
+              onPress={handleQuickDownload}
+              disabled={isDownloading}
+            >
+              <LinearGradient
+                colors={isDownloading ? ["#1a2a3a", "#1a2a3a"] : ["#1D4ED8", "#2563EB", "#3B82F6"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.quickDownloadGrad}
+              >
+                {isDownloading ? (
+                  <>
+                    <ActivityIndicator size="small" color="#60A5FA" />
+                    <Text style={styles.quickDownloadText}>Downloading…</Text>
+                  </>
+                ) : (
+                  <>
+                    <Feather name="download" size={20} color="#fff" />
+                    <View>
+                      <Text style={styles.quickDownloadText}>
+                        {isPremium ? "Download Best Quality" : "Download (720p)"}
+                      </Text>
+                      <Text style={styles.quickDownloadSub}>
+                        {isPremium ? "1-click · Full HD / 4K" : "1-click · Free quality"}
+                      </Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color="rgba(255,255,255,0.6)" style={{ marginLeft: "auto" }} />
+                  </>
+                )}
+              </LinearGradient>
+            </Pressable>
 
             <View style={styles.actionRow}>
               <Pressable
@@ -1003,6 +1055,9 @@ export default function DownloadScreen() {
                       src={videoModalUrl}
                       controls
                       autoPlay
+                      controlsList="nodownload nofullscreen"
+                      disablePictureInPicture
+                      onContextMenu={(e: any) => e.preventDefault()}
                       style={{
                         width: "100%", height: "100%", display: "block",
                         backgroundColor: "#000",
@@ -1102,6 +1157,38 @@ const styles = StyleSheet.create({
   skeletonWrap: { marginBottom: 16 },
   previewSection: { gap: 12, marginBottom: 4 },
   resultSection: { gap: 16 },
+  quickDownloadBtn: {
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  quickDownloadBtnBusy: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  quickDownloadGrad: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    gap: 14,
+  },
+  quickDownloadText: {
+    color: "#fff",
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
+  },
+  quickDownloadSub: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    marginTop: 2,
+  },
   actionRow: { flexDirection: "row", gap: 10 },
   actionBtn: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
