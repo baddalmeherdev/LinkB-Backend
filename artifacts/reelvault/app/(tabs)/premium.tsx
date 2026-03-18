@@ -22,46 +22,76 @@ const UPI_ID = "winuptournament@fam";
 
 const FEATURES = [
   {
-    icon: "hd-box" as const,
-    lib: "material" as const,
-    title: "HD & 4K Downloads",
-    desc: "Download in 720p, 1080p, and beyond",
-    free: false,
-  },
-  {
-    icon: "ban" as const,
-    lib: "feather" as const,
-    title: "No Ads",
-    desc: "Completely ad-free experience",
-    free: false,
-  },
-  {
     icon: "download-cloud" as const,
     lib: "feather" as const,
-    title: "Unlimited Downloads",
-    desc: "No daily limits or restrictions",
-    free: false,
+    title: "Video Download",
+    desc: "Download videos from 2000+ sites",
+    free: true,
+    freeDetail: "Up to 480p",
+    premiumDetail: "Up to 4K Ultra HD",
   },
   {
-    icon: "scissors" as const,
-    lib: "feather" as const,
-    title: "Video Trimming",
-    desc: "Cut clips to exact start/end times",
+    icon: "hd-box" as const,
+    lib: "material" as const,
+    title: "HD & 4K Quality",
+    desc: "Full 1080p, 1440p and 4K downloads",
     free: false,
+    freeDetail: "Locked",
+    premiumDetail: "Fully unlocked",
   },
   {
     icon: "music" as const,
     lib: "feather" as const,
     title: "Audio Extraction",
-    desc: "Extract audio from any video",
+    desc: "Save any video as MP3 audio",
     free: true,
+    freeDetail: "Available",
+    premiumDetail: "Available",
   },
   {
     icon: "message-square" as const,
     lib: "feather" as const,
     title: "Auto Captions",
-    desc: "AI-generated video captions",
+    desc: "One-click caption generation",
     free: true,
+    freeDetail: "Available",
+    premiumDetail: "Available",
+  },
+  {
+    icon: "hash" as const,
+    lib: "feather" as const,
+    title: "Hashtag Generator",
+    desc: "Smart hashtags for your videos",
+    free: true,
+    freeDetail: "Available",
+    premiumDetail: "Available",
+  },
+  {
+    icon: "clock" as const,
+    lib: "feather" as const,
+    title: "Download History",
+    desc: "Re-download any previous video",
+    free: true,
+    freeDetail: "Last 100",
+    premiumDetail: "Unlimited",
+  },
+  {
+    icon: "globe" as const,
+    lib: "feather" as const,
+    title: "Built-in Browser",
+    desc: "Browse and download in one tap",
+    free: true,
+    freeDetail: "Available",
+    premiumDetail: "Available",
+  },
+  {
+    icon: "shield-off" as const,
+    lib: "feather" as const,
+    title: "No Watermark",
+    desc: "Clean downloads, no branding",
+    free: false,
+    freeDetail: "Watermark added",
+    premiumDetail: "Clean & watermark-free",
   },
 ];
 
@@ -351,35 +381,41 @@ export default function PremiumScreen() {
         </View>
 
         <View style={styles.featuresSection}>
-          <Text style={styles.sectionLabel}>What you get</Text>
+          <Text style={styles.sectionLabel}>Free vs Premium</Text>
+          <View style={styles.compareHeader}>
+            <View style={{ flex: 2 }} />
+            <View style={styles.compareCol}>
+              <Text style={styles.compareColLabel}>FREE</Text>
+            </View>
+            <View style={[styles.compareCol, styles.compareColPremium]}>
+              <MaterialCommunityIcons name="crown" size={10} color="#000" />
+              <Text style={[styles.compareColLabel, { color: "#000" }]}>PREMIUM</Text>
+            </View>
+          </View>
           {FEATURES.map((f, i) => (
-            <View key={i} style={[styles.featureRow, !f.free && styles.premiumFeatureRow]}>
-              <View style={[styles.featureIcon, !f.free && styles.premiumFeatureIcon]}>
-                {f.lib === "material" ? (
-                  <MaterialCommunityIcons
-                    name={f.icon as any}
-                    size={18}
-                    color={f.free ? C.accent : C.gold}
-                  />
+            <View key={i} style={styles.compareRow}>
+              <View style={styles.compareFeatureInfo}>
+                <View style={[styles.featureIconSm, !f.free && styles.premiumFeatureIcon]}>
+                  {f.lib === "material" ? (
+                    <MaterialCommunityIcons name={f.icon as any} size={14} color={!f.free ? C.gold : C.accent} />
+                  ) : (
+                    <Feather name={f.icon as any} size={14} color={!f.free ? C.gold : C.accent} />
+                  )}
+                </View>
+                <Text style={styles.compareFeatureTitle} numberOfLines={1}>{f.title}</Text>
+              </View>
+              <View style={styles.compareCol}>
+                {f.freeDetail === "Locked" ? (
+                  <Feather name="lock" size={14} color={C.textMuted} />
+                ) : f.freeDetail === "Available" ? (
+                  <Feather name="check" size={14} color={C.accent} />
                 ) : (
-                  <Feather
-                    name={f.icon as any}
-                    size={18}
-                    color={f.free ? C.accent : C.gold}
-                  />
+                  <Text style={styles.compareDetail}>{f.freeDetail}</Text>
                 )}
               </View>
-              <View style={styles.featureInfo}>
-                <Text style={styles.featureTitle}>{f.title}</Text>
-                <Text style={styles.featureDesc}>{f.desc}</Text>
+              <View style={[styles.compareCol, styles.compareColPremium]}>
+                <Feather name="check" size={14} color="#000" />
               </View>
-              {f.free ? (
-                <View style={styles.freeBadge}>
-                  <Text style={styles.freeBadgeText}>FREE</Text>
-                </View>
-              ) : (
-                <MaterialCommunityIcons name="crown" size={14} color={C.gold} />
-              )}
             </View>
           ))}
         </View>
@@ -402,24 +438,6 @@ export default function PremiumScreen() {
           >
             <MaterialCommunityIcons name="contactless-payment" size={20} color="#000" />
             <Text style={styles.payBtnText}>Pay ₹99 via UPI</Text>
-          </Pressable>
-          <View style={styles.orDivider}>
-            <View style={styles.orLine} />
-            <Text style={styles.orText}>OR</Text>
-            <View style={styles.orLine} />
-          </View>
-          <Pressable
-            style={({ pressed }) => [styles.watchAdBtn, { opacity: pressed ? 0.85 : 1 }]}
-            onPress={() =>
-              Alert.alert(
-                "Watch Ad",
-                "Ads are not available right now. Please pay via UPI to unlock Premium.",
-                [{ text: "OK" }]
-              )
-            }
-          >
-            <Feather name="play-circle" size={18} color={C.accent} />
-            <Text style={styles.watchAdText}>Watch Ad to Unlock (coming soon)</Text>
           </Pressable>
           <Text style={styles.disclaimer}>
             Enter UTR number after payment → Premium unlocks instantly
@@ -597,6 +615,69 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: "Inter_700Bold",
     letterSpacing: 0.5,
+  },
+  compareHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    gap: 4,
+  },
+  compareRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+  },
+  compareFeatureInfo: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  featureIconSm: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    backgroundColor: C.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  compareFeatureTitle: {
+    flex: 1,
+    color: C.text,
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  compareCol: {
+    width: 66,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  compareColPremium: {
+    backgroundColor: C.gold,
+    borderRadius: 8,
+    paddingVertical: 4,
+    flexDirection: "row",
+    gap: 3,
+  },
+  compareColLabel: {
+    color: C.textSecondary,
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.5,
+  },
+  compareDetail: {
+    color: C.textSecondary,
+    fontSize: 10,
+    fontFamily: "Inter_500Medium",
+    textAlign: "center",
   },
   paySection: {
     gap: 12,
