@@ -74,6 +74,15 @@ export default function TabLayout() {
             ),
         }}
       />
+      <Tabs.Screen
+        name="testmode"
+        options={{
+          title: "Test Mode",
+          tabBarIcon: ({ color }) => (
+            <Feather name="terminal" size={22} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

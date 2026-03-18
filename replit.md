@@ -59,7 +59,7 @@ artifacts-monorepo/
 - Share and copy link buttons
 
 ### Navigation
-- 3 tabs: Download, History, Premium (Browser tab removed)
+- 4 tabs: Download, History, Premium, Test Mode (Browser tab hidden)
 
 ### Advanced Features
 - PWA Share Target — app appears in Android/iOS share menu
@@ -96,6 +96,31 @@ artifacts-monorepo/
 - `GET /api/video/stream` — Download endpoint (free: ≤720p, premium: ≤4K)
 - `GET /api/video/update` — Trigger yt-dlp self-update
 - `GET /api/video/status` — Server health + yt-dlp version
+- `POST /api/video/test` — Internal test engine: batch-tests URLs for metadata, formats, download availability; returns structured results with timing, retry count, and logs
+
+## Test Mode (Internal Validation System)
+
+Located in `artifacts/reelvault/app/(tabs)/testmode.tsx`.
+
+### Features
+- Predefined test suite covering: Short-form, Long-form, Direct Video, Invalid URLs, and Unsupported URLs
+- Live test runner with batch processing (3 URLs at a time) for real-time feedback
+- Per-test checklist: metadata loaded, thumbnail available, duration found, formats count, downloadable
+- Performance tracking per test: metadata fetch time, format check time, total time
+- Auto-retry with fallback handler on first failure
+- Success rate tracker (passed/failed/unsupported/invalid + %)
+- Retry Failed button to re-run only failed tests
+- Add custom URLs to the test suite at runtime
+- Live log panel (newest-first, color-coded by severity)
+- Reset to default test suite button
+
+### Test Endpoint (`POST /api/video/test`)
+- Accepts up to 20 URLs with category labels
+- Validates URL format before attempting extraction
+- Retries with fallback handler on first yt-dlp failure
+- Returns per-URL: status, errorCode, errorMessage, title, thumbnail, hasDuration, formatsAvailable, downloadable, retryAttempts, metadataMs, formatMs, totalMs
+- Returns summary: total, passed, failed, unsupported, invalid, successRate, totalMs
+- Returns server-side logs array
 
 ## Error Codes
 

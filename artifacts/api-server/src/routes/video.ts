@@ -381,4 +381,184 @@ function streamDirect(opts: {
   });
 }
 
+// ---- POST /test -----------------------------------------------------------
+// Internal test engine. Tests a batch of URLs for metadata, formats, and
+// download availability. Returns structured results with timing & retry info.
+
+interface TestResult {
+  url: string;
+  category: string;
+  status: "pass" | "fail" | "unsupported" | "invalid";
+  errorCode: string | null;
+  errorMessage: string | null;
+  title: string | null;
+  thumbnail: string | null;
+  hasDuration: boolean;
+  formatsAvailable: number;
+  downloadable: boolean;
+  retryAttempts: number;
+  metadataMs: number;
+  formatMs: number;
+  totalMs: number;
+}
+
+const FALLBACK_FORMATS = [
+  "best[ext=mp4]/best",
+  "worst[ext=mp4]/worst",
+  "best",
+];
+
+router.post("/test", async (req: Request, res: Response) => {
+  const { urls } = req.body as { urls?: Array<{ url: string; category: string }> };
+
+  if (!urls || !Array.isArray(urls)) {
+    res.status(400).json({ error: "INVALID_REQUEST", message: "urls array is required." });
+    return;
+  }
+
+  const results: TestResult[] = [];
+  const logs: string[] = [];
+  const startAll = Date.now();
+
+  for (const item of urls.slice(0, 20)) {
+    const { url, category } = item;
+    const t0 = Date.now();
+    const result: TestResult = {
+      url,
+      category,
+      status: "fail",
+      errorCode: null,
+      errorMessage: null,
+      title: null,
+      thumbnail: null,
+      hasDuration: false,
+      formatsAvailable: 0,
+      downloadable: false,
+      retryAttempts: 0,
+      metadataMs: 0,
+      formatMs: 0,
+      totalMs: 0,
+    };
+
+    // --- Step 1: validate URL
+    if (!validateUrl(url)) {
+      result.status = "invalid";
+      result.errorCode = "INVALID_URL";
+      result.errorMessage = "Not a valid HTTP/HTTPS URL.";
+      result.totalMs = Date.now() - t0;
+      logs.push(`[${category}] INVALID ${url}`);
+      results.push(result);
+      continue;
+    }
+
+    // --- Step 2: fetch metadata with retries
+    const metaStart = Date.now();
+    let info: import("../services/extractor.js").ExtractedInfo | null = null;
+    let retries = 0;
+
+    try {
+      const handler = getHandler(url);
+      try {
+        info = await extractInfo(url, handler.getConfig());
+      } catch (firstErr) {
+        retries++;
+        result.retryAttempts++;
+        logs.push(`[${category}] Retry 1 for ${url}: ${firstErr instanceof Error ? firstErr.message.slice(0, 80) : firstErr}`);
+        // Retry with no extra handler args as fallback
+        try {
+          info = await extractInfo(url, { extraArgs: [], name: "fallback" });
+        } catch (secondErr) {
+          retries++;
+          result.retryAttempts++;
+          logs.push(`[${category}] Retry 2 for ${url}: ${secondErr instanceof Error ? secondErr.message.slice(0, 80) : secondErr}`);
+          throw secondErr;
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const classified = classifyError(msg);
+      result.status = classified.code === "UNSUPPORTED_URL" ? "unsupported" : "fail";
+      result.errorCode = classified.code;
+      result.errorMessage = classified.message;
+      result.metadataMs = Date.now() - metaStart;
+      result.totalMs = Date.now() - t0;
+      logs.push(`[${category}] FAIL ${url} => ${classified.code}: ${classified.message}`);
+      results.push(result);
+      continue;
+    }
+
+    result.metadataMs = Date.now() - metaStart;
+    result.title = info.title;
+    result.thumbnail = info.thumbnail;
+    result.hasDuration = info.duration != null && info.duration > 0;
+
+    // --- Step 3: check formats/download availability
+    const fmtStart = Date.now();
+    let downloadable = false;
+
+    try {
+      const qualities = processQualities(info);
+      const videoQualities = qualities.filter((q) => !q.isAudioOnly);
+      result.formatsAvailable = videoQualities.length;
+
+      // Check if at least one format selector seems valid (non-empty formatId)
+      downloadable = videoQualities.some((q) => q.formatId.length > 0);
+
+      // If no explicit formats, try a yt-dlp format fallback check
+      if (!downloadable) {
+        for (const fallback of FALLBACK_FORMATS) {
+          if (info.formats.length === 0 && info.originalUrl) {
+            // Direct URL site — treat as downloadable
+            downloadable = true;
+            break;
+          }
+        }
+      }
+    } catch {
+      downloadable = false;
+    }
+
+    result.formatMs = Date.now() - fmtStart;
+    result.downloadable = downloadable;
+    result.totalMs = Date.now() - t0;
+
+    if (result.title && result.downloadable) {
+      result.status = "pass";
+      logs.push(`[${category}] PASS ${url} — "${result.title}" (${result.formatsAvailable} formats, ${result.totalMs}ms)`);
+    } else if (result.title) {
+      result.status = "fail";
+      result.errorCode = "NO_FORMATS";
+      result.errorMessage = "Metadata loaded but no downloadable formats found.";
+      logs.push(`[${category}] NO_FORMATS ${url} — "${result.title}"`);
+    } else {
+      result.status = "fail";
+      result.errorCode = "NO_METADATA";
+      result.errorMessage = "Could not retrieve video metadata.";
+      logs.push(`[${category}] NO_METADATA ${url}`);
+    }
+
+    results.push(result);
+  }
+
+  const totalMs = Date.now() - startAll;
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const unsupported = results.filter((r) => r.status === "unsupported").length;
+  const invalid = results.filter((r) => r.status === "invalid").length;
+
+  res.json({
+    summary: {
+      total: results.length,
+      passed,
+      failed,
+      unsupported,
+      invalid,
+      successRate: results.length > 0 ? Math.round((passed / results.length) * 100) : 0,
+      totalMs,
+    },
+    results,
+    logs,
+  });
+});
+
 export default router;
