@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import UnityAds from "react-native-unity-ads";
 import {
   ActivityIndicator,
   Alert,
@@ -39,6 +40,10 @@ import { useApp, type VideoInfo, type VideoQuality } from "@/context/AppContext"
 import { useVideoApi } from "@/hooks/useVideoApi";
 
 const C = Colors.dark;
+
+const UNITY_GAME_ID = "6069290";
+const REWARDED_PLACEMENT = "Rewarded_Android";
+const INTERSTITIAL_PLACEMENT = "Interstitial_Android";
 
 function isValidUrl(text: string): boolean {
   return text.startsWith("http://") || text.startsWith("https://");
@@ -124,6 +129,9 @@ export default function DownloadScreen() {
   const downloadResumableRef = useRef<FileSystem.DownloadResumable | null>(null);
   const inputBorderAnim = useSharedValue(0);
 
+  const downloadCountRef = useRef(0);
+  const [adLoading, setAdLoading] = useState(false);
+
   // Pre-resolved CDN URL cache — populated in background after video info loads.
   // CDN URLs expire ~5 min; we conservatively cache for 4 min.
   const preResolvedRef = useRef<{
@@ -205,6 +213,48 @@ export default function DownloadScreen() {
   }, []);
 
   useEffect(() => {
+    if (Platform.OS === "android") {
+      try {
+        UnityAds.initialize(UNITY_GAME_ID, false);
+      } catch {}
+    }
+  }, []);
+
+  const showRewardedAd = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (Platform.OS !== "android") { resolve(true); return; }
+      try {
+        let settled = false;
+        const onFinish = (placementId: string, result: string) => {
+          if (settled) return;
+          settled = true;
+          UnityAds.removeEventListener("onFinish", onFinish);
+          resolve(result === "completed");
+        };
+        const onError = () => {
+          if (settled) return;
+          settled = true;
+          UnityAds.removeEventListener("onFinish", onFinish);
+          UnityAds.removeEventListener("onError", onError);
+          resolve(false);
+        };
+        UnityAds.addEventListener("onFinish", onFinish);
+        UnityAds.addEventListener("onError", onError);
+        UnityAds.show(REWARDED_PLACEMENT);
+      } catch {
+        resolve(false);
+      }
+    });
+  };
+
+  const showInterstitialAd = () => {
+    if (Platform.OS !== "android") return;
+    try {
+      UnityAds.show(INTERSTITIAL_PLACEMENT);
+    } catch {}
+  };
+
+  useEffect(() => {
     if (autoUrl && typeof autoUrl === "string" && isValidUrl(autoUrl)) {
       handleUrlChange(autoUrl);
       return;
@@ -282,7 +332,30 @@ export default function DownloadScreen() {
     if (!videoInfo) return;
 
     if (quality.isHD && !isPremium) {
-      setShowPremiumModal(true);
+      setAdLoading(true);
+      Alert.alert(
+        "Unlock HD/4K for Free",
+        "Watch a short ad to download in HD/4K quality.",
+        [
+          {
+            text: "Watch Ad",
+            onPress: async () => {
+              setAdLoading(false);
+              const earned = await showRewardedAd();
+              if (earned) {
+                handleDownload(quality);
+              } else {
+                Alert.alert("Ad Skipped", "Watch the full ad to unlock HD/4K download.");
+              }
+            },
+          },
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => setAdLoading(false),
+          },
+        ]
+      );
       return;
     }
 
@@ -372,6 +445,10 @@ export default function DownloadScreen() {
           filename: fallbackFilename,
           isAudio: quality.isAudioOnly,
         });
+        downloadCountRef.current += 1;
+        if (downloadCountRef.current % 3 === 0) {
+          showInterstitialAd();
+        }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
           Alert.alert("Download failed", "Could not download the video. Please try again.");
@@ -441,6 +518,10 @@ export default function DownloadScreen() {
           localUri: savedUri ?? undefined,
           isAudio: quality.isAudioOnly,
         });
+        downloadCountRef.current += 1;
+        if (downloadCountRef.current % 3 === 0) {
+          showInterstitialAd();
+        }
       } catch (e: any) {
         if (!String(e).includes("cancel")) {
           // Fallback: stream via server
@@ -476,6 +557,10 @@ export default function DownloadScreen() {
               localUri: savedUri ?? undefined,
               isAudio: quality.isAudioOnly,
             });
+            downloadCountRef.current += 1;
+            if (downloadCountRef.current % 3 === 0) {
+              showInterstitialAd();
+            }
           } catch {
             setDownloadPhase("");
           }
@@ -643,7 +728,24 @@ export default function DownloadScreen() {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (!isPremium) {
-      setShowPremiumModal(true);
+      Alert.alert(
+        "Unlock Trim for Free",
+        "Watch a short ad to use the Trim feature.",
+        [
+          {
+            text: "Watch Ad",
+            onPress: async () => {
+              const earned = await showRewardedAd();
+              if (earned) {
+                router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl } });
+              } else {
+                Alert.alert("Ad Skipped", "Watch the full ad to unlock the Trim feature.");
+              }
+            },
+          },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
       return;
     }
     router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl } });

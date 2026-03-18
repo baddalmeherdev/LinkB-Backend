@@ -1,74 +1,87 @@
-import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import Colors from "@/constants/colors";
+import { Platform, StyleSheet, View } from "react-native";
+import { WebView } from "react-native-webview";
 
-const C = Colors.dark;
+const START_IO_APP_ID = "202335300";
 
-type Props = {
-  onGoPremium?: () => void;
-};
+const bannerHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .ad-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 320px;
+      min-height: 50px;
+    }
+  </style>
+</head>
+<body>
+  <div class="ad-wrap">
+    <script
+      src="//cdn.startappws.com/loader.js"
+      data-app-id="${START_IO_APP_ID}"
+      async
+    ></script>
+  </div>
+</body>
+</html>
+`;
 
-export function AdBanner({ onGoPremium }: Props) {
+export function AdBanner() {
+  if (Platform.OS === "web") {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
-      <View style={styles.adLabel}>
-        <Text style={styles.adText}>AD</Text>
+      <View style={styles.bannerWrap}>
+        <WebView
+          source={{ html: bannerHtml }}
+          style={styles.webview}
+          scrollEnabled={false}
+          originWhitelist={["*"]}
+          mixedContentMode="always"
+          javaScriptEnabled
+          domStorageEnabled
+          thirdPartyCookiesEnabled
+          onError={() => {}}
+        />
       </View>
-      <View style={styles.content}>
-        <Feather name="zap" size={14} color={C.gold} />
-        <Text style={styles.message}>Remove ads with Premium</Text>
-      </View>
-      <Pressable onPress={onGoPremium} style={styles.cta}>
-        <Text style={styles.ctaText}>Upgrade</Text>
-      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: "row",
+    width: "100%",
     alignItems: "center",
-    backgroundColor: "#1A1200",
-    borderRadius: 10,
-    padding: 10,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: "#3D2A00",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+    paddingVertical: 4,
   },
-  adLabel: {
-    backgroundColor: C.surfaceBorder,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
+  bannerWrap: {
+    width: 320,
+    height: 50,
+    overflow: "hidden",
+    borderRadius: 6,
   },
-  adText: {
-    color: C.textMuted,
-    fontSize: 9,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 0.5,
-  },
-  content: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  message: {
-    color: C.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
-  },
-  cta: {
-    backgroundColor: C.gold,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  ctaText: {
-    color: "#000",
-    fontSize: 12,
-    fontFamily: "Inter_700Bold",
+  webview: {
+    width: 320,
+    height: 50,
+    backgroundColor: "transparent",
   },
 });
