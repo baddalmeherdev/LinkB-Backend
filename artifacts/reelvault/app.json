@@ -16,7 +16,9 @@
     "ios": {
       "supportsTablet": false
     },
-    "android": {},
+    "android": {
+      "package": "com.badalmeher.linkbdownloader"
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
@@ -28,7 +30,16 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24,
+            "extraMavenRepos": ["https://maven.start.io/"]
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
