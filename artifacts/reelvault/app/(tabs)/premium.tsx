@@ -454,6 +454,14 @@ export default function PremiumScreen() {
           </Text>
         </View>
 
+        <View style={styles.warningCard}>
+          <Feather name="alert-triangle" size={16} color="#F59E0B" />
+          <Text style={styles.warningText}>
+            <Text style={styles.warningBold}>Important: </Text>
+            Premium access is stored locally on your device. If you delete or reinstall the app, your premium status cannot be recovered. We do not guarantee restoration of premium after app deletion.
+          </Text>
+        </View>
+
         <View style={styles.aboutSection}>
           <View style={styles.aboutDivider} />
           <Text style={styles.aboutAppName}>LinkB Downloader</Text>
@@ -1019,6 +1027,27 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     fontSize: 14,
     fontFamily: "Inter_500Medium",
+  },
+  warningCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    backgroundColor: "#1A1200",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#3D2E00",
+  },
+  warningText: {
+    flex: 1,
+    color: "#C9A93C",
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 18,
+  },
+  warningBold: {
+    fontFamily: "Inter_700Bold",
+    color: "#F59E0B",
   },
   aboutSection: {
     alignItems: "center",
