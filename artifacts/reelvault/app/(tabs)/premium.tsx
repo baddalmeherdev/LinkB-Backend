@@ -111,7 +111,7 @@ export default function PremiumScreen() {
 
   const handlePayViaUPI = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkDrop&am=99&cu=INR&tn=LinkDrop+Premium`;
+    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkB+Downloader&am=99&cu=INR&tn=LinkB+Downloader+Premium`;
     try {
       const canOpen = await Linking.canOpenURL(upiUrl);
       if (canOpen) {
@@ -354,7 +354,7 @@ export default function PremiumScreen() {
           <View style={styles.crownCircle}>
             <MaterialCommunityIcons name="crown" size={48} color={C.gold} />
           </View>
-          <Text style={styles.heroTitle}>LinkDrop Premium</Text>
+          <Text style={styles.heroTitle}>LinkB Downloader Premium</Text>
           <Text style={styles.heroSubtitle}>Unlock the full experience</Text>
           <View style={styles.priceTag}>
             <Text style={styles.priceAmount}>₹99</Text>
@@ -446,7 +446,7 @@ export default function PremiumScreen() {
 
         <View style={styles.aboutSection}>
           <View style={styles.aboutDivider} />
-          <Text style={styles.aboutAppName}>LinkDrop</Text>
+          <Text style={styles.aboutAppName}>LinkB Downloader</Text>
           <Text style={styles.aboutDev}>Developed by Badal Meher</Text>
           <Text style={styles.aboutVersion}>Version 1.0.0</Text>
         </View>

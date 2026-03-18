@@ -1,7 +1,7 @@
-// LinkDrop Service Worker
+// LinkB Downloader Service Worker
 // Handles PWA installation, basic caching, and share target
 
-const CACHE_NAME = "linkdrop-v2";
+const CACHE_NAME = "linkb-downloader-v2";
 const STATIC_ASSETS = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -26,7 +26,7 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Share Target: When user shares a URL to LinkDrop (GET method),
+// Share Target: When user shares a URL to LinkB Downloader (GET method),
 // the browser navigates directly to /?autoUrl=... which the app handles.
 // No extra SW logic needed for GET share target.
 

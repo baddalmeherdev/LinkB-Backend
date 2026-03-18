@@ -49,7 +49,7 @@ export function PremiumModal({ visible, onClose }: Props) {
 
   const handlePayViaUPI = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkDrop&am=99&cu=INR&tn=LinkDrop+Premium`;
+    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkB+Downloader&am=99&cu=INR&tn=LinkB+Downloader+Premium`;
     try {
       const canOpen = await Linking.canOpenURL(upiUrl);
       if (canOpen) {
@@ -111,7 +111,7 @@ export function PremiumModal({ visible, onClose }: Props) {
                 </Pressable>
               </View>
 
-              <Text style={styles.title}>LinkDrop Premium</Text>
+              <Text style={styles.title}>LinkB Downloader Premium</Text>
               <Text style={styles.subtitle}>Unlock the full experience</Text>
 
               <View style={styles.priceRow}>

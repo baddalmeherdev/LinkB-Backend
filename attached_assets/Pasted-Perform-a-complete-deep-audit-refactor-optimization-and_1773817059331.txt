@@ -1,0 +1,178 @@
+Perform a complete deep audit, refactor, optimization, and upgrade of my app into a fast, stable, production-ready downloader named "LinkB Downloader".
+
+-----------------------------------
+1. REMOVE BROWSER COMPLETELY
+-----------------------------------
+- Remove the entire browser section
+- Delete all related UI, logic, and code
+- Clean unused dependencies
+- Focus only on downloader functionality
+
+-----------------------------------
+2. PROJECT RENAMING
+-----------------------------------
+- Rename app everywhere to: "LinkB Downloader"
+- Update:
+  - UI title
+  - manifest.json
+  - metadata
+  - all references
+- Ensure no old name remains
+
+-----------------------------------
+3. LOGO CREATION
+-----------------------------------
+- Create a modern minimal logo:
+  - Download arrow + link icon concept
+- Add logo to:
+  - Navbar/header
+  - Favicon
+  - Manifest app icon
+
+-----------------------------------
+4. FULL CODE AUDIT & CLEANUP
+-----------------------------------
+- Scan full frontend + backend
+- Fix:
+  - Syntax errors
+  - Runtime bugs
+  - Broken logic
+- Remove unused or duplicate code
+- Refactor into clean structure
+
+-----------------------------------
+5. ULTRA-FAST DOWNLOAD SYSTEM
+-----------------------------------
+- Optimize yt-dlp integration:
+  - Use bestvideo+bestaudio merge
+  - Fast format selection
+- Add:
+  - Retry system (auto retry if fail)
+  - Fallback formats
+- Ensure:
+  - Working download links
+  - No broken downloads
+
+-----------------------------------
+6. UNIVERSAL LINK SUPPORT
+-----------------------------------
+- Accept any valid public URL
+- Detect platform automatically
+- Use:
+  - Handler system (if needed)
+  - Fallback to yt-dlp generic extraction
+- Do NOT hardcode websites
+- Maximize compatibility via yt-dlp
+
+-----------------------------------
+7. INSTANT PREVIEW SYSTEM
+-----------------------------------
+- On URL input or share:
+  - Fetch metadata instantly
+- Show:
+  - Thumbnail
+  - Title
+  - Duration
+  - Quality options
+- Add loading skeleton while fetching
+
+-----------------------------------
+8. PREMIUM QUALITY SYSTEM
+-----------------------------------
+- Free users:
+  - Allow max 720p download
+
+- Premium users:
+  - Unlock 1080p and BEST
+
+- If free user selects >720p:
+  - Show popup:
+    "Upgrade to Premium to unlock HD+"
+
+- Enforce restriction in backend also
+
+-----------------------------------
+9. SMART SHARE + DOWNLOAD FLOW
+-----------------------------------
+- If app receives shared link:
+  - Auto process URL
+
+- Share button logic:
+  - If file already downloaded:
+    → Share video file directly
+
+  - If not downloaded:
+    → Start download
+    → After complete → auto trigger share
+
+-----------------------------------
+10. DOWNLOAD MANAGER
+-----------------------------------
+- Show:
+  - Active downloads
+  - Progress bar
+  - Completed downloads
+- Add:
+  - Download history
+  - Re-download option
+
+-----------------------------------
+11. EXTREME PERFORMANCE OPTIMIZATION
+-----------------------------------
+- Use async/await properly
+- Minimize API response time
+- Add metadata caching
+- Prevent duplicate requests
+- Optimize UI rendering
+
+-----------------------------------
+12. ERROR HANDLING (NO CRASHES)
+-----------------------------------
+Handle properly:
+- Invalid link
+- Unsupported site
+- Private content
+- Download failed
+
+Show clean user-friendly messages
+
+-----------------------------------
+13. MONETIZATION
+-----------------------------------
+- Premium system:
+  - Unlock HD downloads
+
+- UPI Section:
+  - UPI ID: winuptournament@fam
+  - Button: Pay Now
+  - Button: I Paid → unlock premium
+
+-----------------------------------
+14. CLEAN PROFESSIONAL UI
+-----------------------------------
+- Dark premium design
+- Smooth animations
+- Card-based layout
+- Mobile-first UI
+- Buttons:
+  - Download
+  - Share
+  - Copy Link
+
+-----------------------------------
+15. FINAL OUTPUT
+-----------------------------------
+- Fully fixed frontend + backend code
+- Clean structure
+- Fast and stable app
+- No major bugs
+- Ready to run on Replit
+- Clear setup instructions
+
+-----------------------------------
+IMPORTANT RULES
+-----------------------------------
+- Focus on speed, stability, and working downloads
+- Do not leave incomplete features
+- Only process public content
+- Ensure full end-to-end functionality

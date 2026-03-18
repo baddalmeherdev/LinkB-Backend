@@ -1,6 +1,6 @@
 {
-  "name": "LinkDrop — Video Downloader",
-  "short_name": "LinkDrop",
+  "name": "LinkB Downloader",
+  "short_name": "LinkB",
   "description": "Download videos from YouTube, Instagram, TikTok, and 2000+ more sites",
   "start_url": "/",
   "display": "standalone",

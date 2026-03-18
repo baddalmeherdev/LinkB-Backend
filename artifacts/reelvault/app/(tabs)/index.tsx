@@ -52,7 +52,7 @@ function generateCaptions(title: string, platform: string): string {
     `📌 Key Highlights:`,
     `• Engaging content you won't want to miss`,
     `• Perfect for sharing with friends & family`,
-    `• Downloaded with LinkDrop ⚡`,
+    `• Downloaded with LinkB Downloader ⚡`,
   ];
   return lines.join("\n");
 }
@@ -75,7 +75,7 @@ function generateHashtags(title: string, platform: string): string {
   };
 
   const platTags = platformTags[platform] ?? ["#Video", "#Trending"];
-  const allTags = [...words, ...platTags, "#LinkDrop", "#VideoDownloader", "#MustWatch"];
+  const allTags = [...words, ...platTags, "#LinkBDownloader", "#VideoDownloader", "#MustWatch"];
   return [...new Set(allTags)].join(" ");
 }
 
@@ -398,7 +398,7 @@ export default function DownloadScreen() {
         // Fall back to sharing the URL
         await navigator.share({
           title: videoInfo.title,
-          text: `Download "${videoInfo.title}" with LinkDrop`,
+          text: `Download "${videoInfo.title}" with LinkB Downloader`,
           url: videoInfo.originalUrl,
         });
       } catch (e: any) {
@@ -501,7 +501,7 @@ export default function DownloadScreen() {
 
       <View style={styles.header}>
         <View>
-          <Text style={styles.appName}>LinkDrop</Text>
+          <Text style={styles.appName}>LinkB Downloader</Text>
           <Text style={styles.tagline}>Download any video, anywhere</Text>
         </View>
         {isPremium ? (

@@ -56,10 +56,10 @@ function setupPWA() {
 
 function injectWebFonts() {
   if (typeof document === "undefined") return;
-  if (document.getElementById("linkdrop-fonts")) return;
+  if (document.getElementById("linkb-downloader-fonts")) return;
 
   const style = document.createElement("style");
-  style.id = "linkdrop-fonts";
+  style.id = "linkb-downloader-fonts";
   style.textContent = `
     @font-face {
       font-family: 'Inter_400Regular';
