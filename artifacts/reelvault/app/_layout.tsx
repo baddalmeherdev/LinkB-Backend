@@ -8,8 +8,8 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState } from "react";
-import { Platform, View } from "react-native";
+import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppProvider } from "@/context/AppContext";
@@ -20,10 +20,6 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient();
 const C = Colors.dark;
-
-// Font loading timeout — if fonts haven't loaded after this many ms, show the
-// app anyway to avoid the Expo Router "6000ms timeout exceeded" error.
-const FONT_TIMEOUT_MS = 4000;
 
 function injectWebFonts() {
   if (typeof document === "undefined") return;
@@ -91,27 +87,17 @@ function NativeLayout() {
     Inter_700Bold,
   });
 
-  // Safety timeout — never block navigation for more than FONT_TIMEOUT_MS
-  const [timedOut, setTimedOut] = useState(false);
+  // Hide splash screen once fonts are ready (or if they error).
+  // We do NOT block rendering RootLayoutNav — the navigator must mount
+  // immediately so Expo Router's 6000 ms ready-timeout is never triggered.
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), FONT_TIMEOUT_MS);
-    return () => clearTimeout(t);
-  }, []);
-
-  const ready = fontsLoaded || !!fontError || timedOut;
-
-  useEffect(() => {
-    if (ready) {
+    if (fontsLoaded || fontError) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [ready]);
+  }, [fontsLoaded, fontError]);
 
-  // Show a blank dark screen instead of null so Expo Router never hits its
-  // 6000ms navigation timeout.
-  if (!ready) {
-    return <View style={{ flex: 1, backgroundColor: C.background }} />;
-  }
-
+  // Always render the navigator right away. The splash screen keeps the UI
+  // hidden on native until hideAsync() is called above.
   return <RootLayoutNav />;
 }
 
@@ -121,7 +107,6 @@ function WebLayout() {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  // On web there is no font-loading gate — render immediately.
   return <RootLayoutNav />;
 }
 
