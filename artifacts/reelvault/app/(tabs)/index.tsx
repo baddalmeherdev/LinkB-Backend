@@ -150,10 +150,17 @@ export default function DownloadScreen() {
     const trimmed = text.trim();
     if (isValidUrl(trimmed)) {
       debounceRef.current = setTimeout(async () => {
+        // Step 1: Fast preview for instant feedback
         const preview = await fetchPreview(trimmed);
         if (preview) {
           setPreviewData(preview);
           setTimeout(() => scrollRef.current?.scrollTo({ y: 200, animated: true }), 200);
+        }
+        // Step 2: Auto-fetch formats — no button click needed
+        const info = await fetchVideoInfo(trimmed);
+        if (info) {
+          setVideoInfo(info);
+          setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
         }
       }, 700);
     }
@@ -188,36 +195,24 @@ export default function DownloadScreen() {
     }
   };
 
-  const handleGetFormats = useCallback(async () => {
-    const trimmed = url.trim();
-    if (!trimmed) return;
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const info = await fetchVideoInfo(trimmed);
-    if (info) {
-      setVideoInfo(info);
-      setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 300);
-    }
-  }, [url, fetchVideoInfo]);
-
   const handleFetch = useCallback(async () => {
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!trimmed || !isValidUrl(trimmed)) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     clearError();
     resetState();
 
-    if (isValidUrl(trimmed)) {
-      const preview = await fetchPreview(trimmed);
-      if (preview) {
-        setPreviewData(preview);
-        setTimeout(() => scrollRef.current?.scrollTo({ y: 200, animated: true }), 200);
-      }
-    } else {
-      const info = await fetchVideoInfo(trimmed);
-      if (info) {
-        setVideoInfo(info);
-        setTimeout(() => scrollRef.current?.scrollTo({ y: 220, animated: true }), 300);
-      }
+    // Step 1: Fast preview for instant feedback
+    const preview = await fetchPreview(trimmed);
+    if (preview) {
+      setPreviewData(preview);
+      setTimeout(() => scrollRef.current?.scrollTo({ y: 200, animated: true }), 200);
+    }
+    // Step 2: Auto-fetch formats
+    const info = await fetchVideoInfo(trimmed);
+    if (info) {
+      setVideoInfo(info);
+      setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
     }
   }, [url, fetchPreview, fetchVideoInfo, clearError]);
 
@@ -616,33 +611,40 @@ export default function DownloadScreen() {
           </Animated.View>
         ) : null}
 
-        {(isLoadingPreview && !previewData) ? (
+        {/* Preview skeleton — shown while fetching preview and no data yet */}
+        {isLoadingPreview && !previewData && !videoInfo ? (
           <Animated.View entering={FadeIn} style={styles.skeletonWrap}>
             <LinkPreviewCard preview={null} isLoading />
           </Animated.View>
         ) : null}
 
+        {/* Preview card + formats skeleton — shown while preview loaded but formats still loading */}
+        {previewData && !videoInfo && isLoadingInfo ? (
+          <Animated.View entering={FadeInDown} style={styles.previewSection}>
+            <LinkPreviewCard
+              preview={previewData}
+              isLoading={false}
+              onPlay={() => handlePlay(url.trim())}
+            />
+            <Animated.View entering={FadeIn} style={styles.skeletonWrap}>
+              <VideoInfoSkeleton />
+            </Animated.View>
+          </Animated.View>
+        ) : null}
+
+        {/* Preview card — shown after preview loaded if formats fetch not yet started */}
         {previewData && !videoInfo && !isLoadingInfo ? (
           <Animated.View entering={FadeInDown} style={styles.previewSection}>
             <LinkPreviewCard
               preview={previewData}
-              isLoading={isLoadingPreview}
+              isLoading={false}
               onPlay={() => handlePlay(url.trim())}
             />
-
-            <Pressable
-              style={styles.getFormatsBtn}
-              onPress={handleGetFormats}
-              disabled={isLoadingInfo}
-            >
-              <Feather name="download-cloud" size={17} color="#fff" />
-              <Text style={styles.getFormatsBtnText}>Get Download Options</Text>
-              <Feather name="chevron-right" size={16} color="rgba(255,255,255,0.7)" />
-            </Pressable>
           </Animated.View>
         ) : null}
 
-        {isLoadingInfo ? (
+        {/* Formats skeleton — shown when fetching info directly with no preview yet */}
+        {isLoadingInfo && !previewData && !videoInfo ? (
           <Animated.View entering={FadeIn} style={styles.skeletonWrap}>
             <VideoInfoSkeleton />
           </Animated.View>
@@ -1048,11 +1050,6 @@ const styles = StyleSheet.create({
   slowRequestSub: { color: C.textMuted, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
   skeletonWrap: { marginBottom: 16 },
   previewSection: { gap: 12, marginBottom: 4 },
-  getFormatsBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: C.accent, paddingVertical: 15, borderRadius: 14,
-  },
-  getFormatsBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold", flex: 1, textAlign: "center", marginLeft: -26 },
   resultSection: { gap: 16 },
   actionRow: { flexDirection: "row", gap: 10 },
   actionBtn: {

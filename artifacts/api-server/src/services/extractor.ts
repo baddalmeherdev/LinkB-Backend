@@ -118,7 +118,7 @@ export async function extractInfo(url: string, handler?: HandlerConfig): Promise
   throw lastError;
 }
 
-// ---- Robust Extraction (test engine) --------------------------------------
+// ---- Robust Extraction Engine ---------------------------------------------
 // Tries progressively more permissive strategies before giving up.
 // Returns the info plus metadata about how many retries it took.
 
