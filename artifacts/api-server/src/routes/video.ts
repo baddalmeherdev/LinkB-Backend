@@ -7,7 +7,7 @@ import { spawn } from "child_process";
 import { createReadStream, promises as fsp } from "fs";
 import { randomBytes } from "crypto";
 import { detectPlatform, validateUrl } from "../services/platform-detect.js";
-import { extractInfoRobust, processQualities, resolvePlaybackUrl, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
+import { extractInfoRobust, processQualities, resolvePlaybackUrl, selfUpdate, getCurrentVersion, buildFormatFallbackChain, YTDLP } from "../services/extractor.js";
 import { previewCache, infoCache } from "../services/metadata-cache.js";
 import { getHandler } from "../handlers/index.js";
 
@@ -291,14 +291,9 @@ router.get("/stream", async (req: Request, res: Response) => {
   const handler = getHandler(url);
   const cfg = handler.getConfig();
 
-  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
   const ytdlpFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
-    : isFullSelector
-      ? formatId
-      : isAudioOnly
-        ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
-        : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+    : buildFormatFallbackChain(formatId, isAudioOnly)[0];
 
   // Flush headers immediately to keep proxy alive during yt-dlp processing.
   // The body follows once the temp file is ready (may take 10-60 s).
@@ -348,46 +343,60 @@ router.get("/direct", async (req: Request, res: Response) => {
   const handler = getHandler(url);
   const cfg = handler.getConfig();
 
-  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
-  const ytdlpFormat = cfg.downloadFormatOverride
+  const ytdlpPrimaryFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
-    : isFullSelector
-      ? formatId
-      : isAudioOnly
-        ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
-        : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+    : buildFormatFallbackChain(formatId, isAudioOnly)[0];
 
-  console.log(`[direct] handler=${handler.name} format=${ytdlpFormat}`);
+  console.log(`[direct] handler=${handler.name} format=${ytdlpPrimaryFormat}`);
+
+  // Format fallback chain for direct URL resolution
+  const directFormatChain = [
+    ytdlpPrimaryFormat,
+    isAudioOnly ? "bestaudio" : "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    "best[ext=mp4]/best",
+    "best",
+  ];
+  const uniqueDirectChain = [...new Set(directFormatChain)];
 
   const { result, errInfo, usedHeartbeat } = await withHeartbeat(
     res,
     (async () => {
-      const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-        const proc = spawn(YTDLP, [
-          ...BASE_YTDLP_ARGS,
-          ...cfg.extraArgs,
-          "-f", ytdlpFormat,
-          "--get-url",
-          url,
-        ], { stdio: ["ignore", "pipe", "pipe"] });
+      let lastErr: Error = new Error("No direct URL resolved.");
+      for (const fmt of uniqueDirectChain) {
+        try {
+          const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+            const proc = spawn(YTDLP, [
+              ...BASE_YTDLP_ARGS,
+              ...cfg.extraArgs,
+              "-f", fmt,
+              "--get-url",
+              url,
+            ], { stdio: ["ignore", "pipe", "pipe"] });
 
-        let out = "";
-        proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
-        proc.stderr.on("data", (d: Buffer) => {
-          const line = d.toString().trim();
-          if (line && !line.startsWith("[debug]")) console.log("[direct-yt-dlp]", line);
-        });
-        proc.on("error", reject);
-        proc.on("close", (code) => {
-          if (code === 0) resolve({ stdout: out });
-          else reject(new Error(`yt-dlp exited ${code}`));
-        });
-      });
+            let out = "";
+            proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+            proc.stderr.on("data", (d: Buffer) => {
+              const line = d.toString().trim();
+              if (line && !line.startsWith("[debug]")) console.log("[direct-yt-dlp]", line);
+            });
+            proc.on("error", reject);
+            proc.on("close", (code) => {
+              if (code === 0) resolve({ stdout: out });
+              else reject(new Error(`yt-dlp exited ${code}`));
+            });
+          });
 
-      const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
-      if (!lines[0]) throw new Error("No direct URL resolved.");
-
-      return { directUrl: lines[0], filename };
+          const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
+          if (lines[0]) {
+            console.log(`[direct] resolved OK with format: ${fmt}`);
+            return { directUrl: lines[0], filename };
+          }
+        } catch (err) {
+          lastErr = err instanceof Error ? err : new Error(String(err));
+          console.warn(`[direct] format "${fmt}" failed, trying next...`);
+        }
+      }
+      throw lastErr;
     })(),
   );
 
@@ -436,14 +445,9 @@ router.get("/pipe", async (req: Request, res: Response) => {
   const handler = getHandler(url);
   const cfg = handler.getConfig();
 
-  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
   const ytdlpFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
-    : isFullSelector
-      ? formatId
-      : isAudioOnly
-        ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
-        : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+    : buildFormatFallbackChain(formatId, isAudioOnly)[0];
 
   // ─── Helper: proxy a CDN URL to client ──────────────────────────────────
   const proxyCdnUrl = async (cdnUrl: string): Promise<void> => {
@@ -493,33 +497,54 @@ router.get("/pipe", async (req: Request, res: Response) => {
   // ─── Normal path: resolve CDN URL via yt-dlp then proxy ─────────────────
   console.log(`[pipe] handler=${handler.name} format=${ytdlpFormat}`);
 
+  // Format fallback chain for pipe URL resolution
+  const pipeFormatChain = [
+    ytdlpFormat,
+    isAudioOnly ? "bestaudio" : "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    "best[ext=mp4]/best",
+    "best",
+  ];
+  const uniquePipeChain = [...new Set(pipeFormatChain)];
+
   let cdnUrl: string;
   try {
-    const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-      const proc = spawn(YTDLP, [
-        ...BASE_YTDLP_ARGS,
-        ...cfg.extraArgs,
-        "-f", ytdlpFormat,
-        "--get-url",
-        url,
-      ], { stdio: ["ignore", "pipe", "pipe"] });
+    let resolved: string | null = null;
+    for (const fmt of uniquePipeChain) {
+      try {
+        const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+          const proc = spawn(YTDLP, [
+            ...BASE_YTDLP_ARGS,
+            ...cfg.extraArgs,
+            "-f", fmt,
+            "--get-url",
+            url,
+          ], { stdio: ["ignore", "pipe", "pipe"] });
 
-      let out = "";
-      proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
-      proc.stderr.on("data", (d: Buffer) => {
-        const line = d.toString().trim();
-        if (line && !line.startsWith("[debug]")) console.log("[pipe-yt-dlp]", line);
-      });
-      proc.on("error", reject);
-      proc.on("close", (code) => {
-        if (code === 0) resolve({ stdout: out });
-        else reject(new Error(`yt-dlp exited ${code}`));
-      });
-    });
+          let out = "";
+          proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+          proc.stderr.on("data", (d: Buffer) => {
+            const line = d.toString().trim();
+            if (line && !line.startsWith("[debug]")) console.log("[pipe-yt-dlp]", line);
+          });
+          proc.on("error", reject);
+          proc.on("close", (code) => {
+            if (code === 0) resolve({ stdout: out });
+            else reject(new Error(`yt-dlp exited ${code}`));
+          });
+        });
 
-    const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
-    if (!lines[0]) throw new Error("No CDN URL resolved.");
-    cdnUrl = lines[0];
+        const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
+        if (lines[0]) {
+          resolved = lines[0];
+          console.log(`[pipe] CDN URL resolved with format: ${fmt}`);
+          break;
+        }
+      } catch {
+        console.warn(`[pipe] format "${fmt}" failed, trying next...`);
+      }
+    }
+    if (!resolved) throw new Error("No CDN URL resolved.");
+    cdnUrl = resolved;
   } catch (err) {
     console.error("[pipe] URL resolve failed:", err);
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -778,6 +803,37 @@ async function addWatermark(inputPath: string, outputPath: string): Promise<void
   ], "ffmpeg");
 }
 
+// Tries a single yt-dlp format selector and downloads to tmpRaw.
+// Returns true on success, throws on failure.
+async function tryDownloadWithFormat(opts: {
+  url: string; format: string; ext: string;
+  extraArgs: string[]; tmpRaw: string;
+  req: Request;
+}): Promise<void> {
+  const { url, format, ext, extraArgs, tmpRaw, req } = opts;
+  return new Promise<void>((resolve, reject) => {
+    const proc = spawn(YTDLP, [
+      ...BASE_YTDLP_ARGS,
+      ...extraArgs,
+      "-f", format,
+      "--merge-output-format", ext,
+      "-o", tmpRaw,
+      url,
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+
+    proc.stderr.on("data", (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line && !line.startsWith("[debug]")) console.log("[yt-dlp]", line);
+    });
+    req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`yt-dlp exited ${code} with format "${format}"`));
+    });
+  });
+}
+
 async function streamViaTemp(opts: {
   req: Request; res: Response; url: string;
   format: string; ext: string; extraArgs: string[];
@@ -795,31 +851,40 @@ async function streamViaTemp(opts: {
   let clientGone = false;
   req.on("close", () => { clientGone = true; });
 
+  // Build a fallback chain: try the requested format, then progressively simpler ones
+  const formatChain = [
+    format,
+    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best",
+    "best[ext=mp4]/best[ext=webm]/best",
+    "best",
+    "worst",
+  ];
+
+  // Deduplicate while preserving order
+  const uniqueChain = [...new Set(formatChain)];
+
   try {
-    // Phase 1: yt-dlp downloads + merges to temp file
-    await new Promise<void>((resolve, reject) => {
-      const proc = spawn(YTDLP, [
-        ...BASE_YTDLP_ARGS,
-        ...extraArgs,
-        "-f", format,
-        "--merge-output-format", ext,
-        "-o", tmpRaw,
-        url,
-      ], { stdio: ["ignore", "pipe", "pipe"] });
+    // Phase 1: yt-dlp downloads + merges to temp file (with format fallback)
+    let downloadSuccess = false;
+    let lastErr: Error = new Error("All format selectors failed");
 
-      proc.stderr.on("data", (d: Buffer) => {
-        const line = d.toString().trim();
-        if (line && !line.startsWith("[debug]")) console.log("[yt-dlp]", line);
-      });
+    for (const fmt of uniqueChain) {
+      if (clientGone) return;
+      try {
+        console.log(`[yt-dlp] trying format: ${fmt}`);
+        await tryDownloadWithFormat({ url, format: fmt, ext, extraArgs, tmpRaw, req });
+        downloadSuccess = true;
+        console.log(`[yt-dlp] success with format: ${fmt}`);
+        break;
+      } catch (err) {
+        lastErr = err instanceof Error ? err : new Error(String(err));
+        console.warn(`[yt-dlp] format "${fmt}" failed, trying next...`);
+        // Clean up any partial file before retry
+        fsp.unlink(tmpRaw).catch(() => {});
+      }
+    }
 
-      req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
-      proc.on("error", reject);
-      proc.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`yt-dlp exited ${code}`));
-      });
-    });
-
+    if (!downloadSuccess) throw lastErr;
     if (clientGone) return;
 
     // Phase 2: Add watermark for free users (video only, not audio)

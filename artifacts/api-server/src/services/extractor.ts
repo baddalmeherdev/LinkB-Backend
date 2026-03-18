@@ -47,6 +47,8 @@ export interface RawFormat {
   vbr: number | null;
   tbr: number | null;
   format_note: string | null;
+  url?: string | null;
+  protocol?: string | null;
 }
 
 export interface ExtractedInfo {
@@ -56,6 +58,8 @@ export interface ExtractedInfo {
   uploader: string | null;
   formats: RawFormat[];
   originalUrl: string;
+  directUrl?: string | null;    // For single-format sites (no formats array)
+  directExt?: string | null;
 }
 
 export interface QualityOption {
@@ -100,16 +104,46 @@ export async function extractInfo(url: string, handler?: HandlerConfig): Promise
         "--dump-json",
         "--user-agent", ua,
         url,
-      ], { timeout: 45000 });
+      ], { timeout: 60000, maxBuffer: 50 * 1024 * 1024 });
 
       const info = JSON.parse(stdout) as Record<string, unknown>;
+
+      // Capture direct URL for single-format sites
+      const directUrl = (info.url as string | null) ?? null;
+      const directExt = (info.ext as string | null) ?? null;
+
+      // Build synthetic format list from direct URL when formats array is missing
+      let formats = ((info.formats as RawFormat[] | undefined) ?? []);
+
+      // If no formats but yt-dlp gave a direct URL, build a synthetic single format
+      if (formats.length === 0 && directUrl) {
+        formats = [{
+          format_id: "best",
+          ext: directExt ?? "mp4",
+          height: (info.height as number | null) ?? null,
+          width: (info.width as number | null) ?? null,
+          filesize: (info.filesize as number | null) ?? null,
+          filesize_approx: (info.filesize_approx as number | null) ?? null,
+          vcodec: (info.vcodec as string | null) ?? "h264",
+          acodec: (info.acodec as string | null) ?? "mp4a",
+          abr: null,
+          vbr: null,
+          tbr: (info.tbr as number | null) ?? null,
+          format_note: "best",
+          url: directUrl,
+          protocol: (info.protocol as string | null) ?? null,
+        }];
+      }
+
       return {
         title: String(info.title ?? "Unknown Title"),
         thumbnail: (info.thumbnail as string | null) ?? null,
         duration: (info.duration as number | null) ?? null,
         uploader: (info.uploader as string | null) ?? null,
-        formats: ((info.formats as RawFormat[] | undefined) ?? []),
+        formats,
         originalUrl: url,
+        directUrl,
+        directExt,
       };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -199,21 +233,58 @@ const PLATFORM_FALLBACKS: Record<string, Array<{ name: string; extraArgs: string
         "--extractor-args", "youtube:player_client=web",
       ],
     },
+    {
+      name: "youtube-ios",
+      extraArgs: [
+        "--extractor-args", "youtube:player_client=ios",
+      ],
+    },
+  ],
+  reddit: [
+    {
+      name: "reddit-mobile",
+      extraArgs: [
+        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        "--add-header", "Referer:https://www.reddit.com/",
+      ],
+    },
+    { name: "reddit-bare", extraArgs: [] },
+  ],
+  twitter_x: [
+    {
+      name: "x-api",
+      extraArgs: [
+        "--add-header", "Referer:https://x.com/",
+      ],
+    },
+    { name: "x-bare", extraArgs: [] },
   ],
 };
 
 // Generic fallback strategies applied to all platforms when platform-specific fails
 const GENERIC_FALLBACKS: Array<{ name: string; extraArgs: string[] }> = [
-  { name: "generic-best", extraArgs: [] },
-  { name: "generic-worst", extraArgs: ["--format-sort", "+size"] },
+  // Try with generic extractor enabled
+  { name: "generic-no-playlist", extraArgs: [] },
+  // Try with format sort by size (gets smallest working format first)
+  { name: "generic-size-sort", extraArgs: ["--format-sort", "+size"] },
+  // Force generic extractor
+  { name: "generic-extractor", extraArgs: ["--force-generic-extractor"] },
+  // Try allowing all formats
+  { name: "generic-all-formats", extraArgs: ["--format", "best"] },
+  // Try with HLS preference
+  { name: "generic-hls", extraArgs: ["--format", "best[protocol^=m3u8]/best"] },
+  // Absolute last resort - no restrictions
+  { name: "generic-worst", extraArgs: ["--format", "worst"] },
 ];
 
 function getPlatformKey(url: string): string {
   if (/tiktok\.com|vm\.tiktok\.com/.test(url)) return "tiktok";
   if (/instagram\.com/.test(url)) return "instagram";
-  if (/twitter\.com|x\.com/.test(url)) return "twitter";
+  if (/twitter\.com/.test(url)) return "twitter";
+  if (/x\.com/.test(url)) return "twitter_x";
   if (/facebook\.com|fb\.watch|m\.facebook\.com/.test(url)) return "facebook";
   if (/youtube\.com|youtu\.be/.test(url)) return "youtube";
+  if (/reddit\.com|v\.redd\.it/.test(url)) return "reddit";
   return "generic";
 }
 
@@ -272,9 +343,9 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
   const qualities: QualityOption[] = [];
   const seenHeights = new Set<number>();
 
-  // Best audio track
+  // ── Audio-only formats ──────────────────────────────────────────────────
   const audioFormats = formats
-    .filter((f) => f.vcodec === "none" && f.acodec != null && f.acodec !== "none")
+    .filter((f) => (f.vcodec === "none" || f.vcodec === null) && f.acodec != null && f.acodec !== "none")
     .sort((a, b) => ((b.abr ?? b.tbr ?? 0) - (a.abr ?? a.tbr ?? 0)));
 
   if (audioFormats[0]) {
@@ -291,9 +362,11 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
     });
   }
 
-  // Video formats — pick the closest to each standard height
+  // ── Video formats with explicit heights ─────────────────────────────────
+  // Include all formats that have a height — even if vcodec info is missing
+  // (some sites expose combined streams with no separate vcodec field)
   const videoFormats = formats
-    .filter((f) => f.vcodec !== "none" && f.vcodec != null && f.height != null && f.height > 0)
+    .filter((f) => f.height != null && f.height > 0 && f.vcodec !== "none")
     .sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
 
   for (const target of [144, 240, 360, 480, 720, 1080, 1440, 2160]) {
@@ -310,7 +383,7 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
         quality: `${h}p`,
         label: qualityLabel(h),
         resolution: `${closest.width ?? "?"}x${h}`,
-        ext: "mp4",
+        ext: closest.ext === "webm" ? "webm" : "mp4",
         filesize: closest.filesize ?? closest.filesize_approx ?? null,
         isAudioOnly: false,
         isHD: h > 720,
@@ -318,13 +391,57 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
     }
   }
 
-  // Fallback when no formats are listed (direct-URL sites)
+  // ── If still no video qualities — try ANY format with height ────────────
+  if (qualities.filter((q) => !q.isAudioOnly).length === 0) {
+    const anyFormats = formats
+      .filter((f) => f.height != null && f.height > 0)
+      .sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
+
+    for (const f of anyFormats) {
+      const h = f.height!;
+      if (!seenHeights.has(h)) {
+        seenHeights.add(h);
+        qualities.push({
+          formatId: f.format_id,
+          quality: `${h}p`,
+          label: qualityLabel(h),
+          resolution: `${f.width ?? "?"}x${h}`,
+          ext: "mp4",
+          filesize: f.filesize ?? f.filesize_approx ?? null,
+          isAudioOnly: false,
+          isHD: h > 720,
+        });
+        if (qualities.filter((q) => !q.isAudioOnly).length >= 4) break;
+      }
+    }
+  }
+
+  // ── If still no video qualities — try any non-audio format ─────────────
+  if (qualities.filter((q) => !q.isAudioOnly).length === 0) {
+    const anyVideo = formats.filter((f) => f.acodec !== "none" || f.vcodec !== "none");
+    if (anyVideo.length > 0) {
+      const f = anyVideo[0];
+      qualities.push({
+        formatId: f.format_id,
+        quality: "Best",
+        label: "Best Available",
+        resolution: "auto",
+        ext: "mp4",
+        filesize: f.filesize ?? f.filesize_approx ?? null,
+        isAudioOnly: false,
+        isHD: false,
+      });
+    }
+  }
+
+  // ── Ultimate fallback for sites with no structured formats ──────────────
+  // Uses simple "best" selector that yt-dlp always resolves on any site
   if (qualities.filter((q) => !q.isAudioOnly).length === 0) {
     qualities.push({
-      formatId: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]",
-      quality: "720p",
+      formatId: "best[ext=mp4]/best[ext=webm]/best",
+      quality: "Best",
       label: "Best Available",
-      resolution: "up to 720p",
+      resolution: "auto",
       ext: "mp4",
       filesize: null,
       isAudioOnly: false,
@@ -332,24 +449,26 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
     });
   }
 
-  // Always add a "Best Free HD (720p)" sentinel so free users always have a
-  // clear highest-quality option even if the source has no discrete 720p format.
-  const hasTrueHD = qualities.some((q) => !q.isAudioOnly && q.isHD);
-  const hasFree720 = qualities.some((q) => !q.isAudioOnly && !q.isHD && parseInt(q.quality) >= 720);
-  if (!hasFree720 || hasTrueHD) {
-    const sentinel: QualityOption = {
-      // Download uses temp file, so ffmpeg can seek — any protocol is fine.
-      formatId: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]",
-      quality: "720p",
-      label: "Best Free HD",
-      resolution: "up to 720p",
-      ext: "mp4",
-      filesize: null,
-      isAudioOnly: false,
-      isHD: false,
-    };
-    if (!qualities.some((q) => q.quality === "720p")) {
-      qualities.push(sentinel);
+  // ── For sites that do have video qualities, ensure 720p free tier option ─
+  const videoQualitiesOnly = qualities.filter((q) => !q.isAudioOnly);
+  if (videoQualitiesOnly.length > 0 && videoQualitiesOnly[0].quality !== "Best") {
+    const hasFree720 = qualities.some((q) => !q.isAudioOnly && !q.isHD && parseInt(q.quality) >= 720);
+    const hasTrueHD = qualities.some((q) => !q.isAudioOnly && q.isHD);
+
+    if (!hasFree720 || hasTrueHD) {
+      const sentinel: QualityOption = {
+        formatId: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best",
+        quality: "720p",
+        label: "Best Free HD",
+        resolution: "up to 720p",
+        ext: "mp4",
+        filesize: null,
+        isAudioOnly: false,
+        isHD: false,
+      };
+      if (!qualities.some((q) => q.quality === "720p")) {
+        qualities.push(sentinel);
+      }
     }
   }
 
@@ -414,13 +533,41 @@ export async function resolvePlaybackUrl(url: string, handler?: HandlerConfig): 
   throw new Error("Could not resolve a playback URL after all fallbacks.");
 }
 
-// ---- Download / Stream ----------------------------------------------------
+// ---- Format selector with fallback chain ----------------------------------
+// Returns an array of format selectors to try in order, from most specific to most permissive
 
-const DOWNLOAD_FORMAT_CHAINS = [
-  (fid: string) => `${fid}+bestaudio[ext=m4a]/${fid}+bestaudio/${fid}/best[ext=mp4]/best`,
-  (_fid: string) => "best[ext=mp4]/best",
-  (_fid: string) => "best",
-];
+export function buildFormatFallbackChain(formatId: string, isAudioOnly: boolean): string[] {
+  if (isAudioOnly) {
+    return [
+      `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`,
+      "bestaudio[ext=m4a]/bestaudio",
+      "bestaudio",
+      "worst",
+    ];
+  }
+
+  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
+
+  if (isFullSelector) {
+    return [
+      formatId,
+      "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+      "best[ext=mp4]/best",
+      "best",
+      "worst",
+    ];
+  }
+
+  return [
+    `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}`,
+    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    "best[ext=mp4]/best[ext=webm]/best",
+    "best",
+    "worst",
+  ];
+}
+
+// ---- Download / Stream ----------------------------------------------------
 
 export function spawnDownload(opts: {
   url: string;
@@ -429,12 +576,12 @@ export function spawnDownload(opts: {
   extraArgs?: string[];
 }): ReturnType<typeof spawn> {
   const { url, formatId, ext, extraArgs = [] } = opts;
-  const format = DOWNLOAD_FORMAT_CHAINS[0](formatId);
+  const [primaryFormat] = buildFormatFallbackChain(formatId, false);
 
   return spawn(YTDLP, [
     ...BASE_ARGS,
     ...extraArgs,
-    "-f", format,
+    "-f", primaryFormat,
     "--merge-output-format", ext,
     "-o", "-",
     url,
