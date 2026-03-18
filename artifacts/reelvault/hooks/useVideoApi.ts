@@ -234,7 +234,8 @@ export function useVideoApi() {
     videoUrl: string,
     quality: VideoQuality,
     title: string,
-    isPremium: boolean
+    isPremium: boolean,
+    preResolvedDirectUrl?: string
   ): string => {
     const params = new URLSearchParams({
       url: videoUrl,
@@ -243,6 +244,7 @@ export function useVideoApi() {
       isPremium: String(isPremium),
       title,
     });
+    if (preResolvedDirectUrl) params.set("directUrl", preResolvedDirectUrl);
     return `${BASE_URL}/api/video/pipe?${params.toString()}`;
   };
 

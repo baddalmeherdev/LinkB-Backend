@@ -123,6 +123,15 @@ export default function DownloadScreen() {
   const downloadResumableRef = useRef<FileSystem.DownloadResumable | null>(null);
   const inputBorderAnim = useSharedValue(0);
 
+  // Pre-resolved CDN URL cache — populated in background after video info loads.
+  // CDN URLs expire ~5 min; we conservatively cache for 4 min.
+  const preResolvedRef = useRef<{
+    formatId: string;
+    directUrl: string;
+    filename: string;
+    expires: number;
+  } | null>(null);
+
   const inputStyle = useAnimatedStyle(() => ({
     borderColor: `rgba(59, 130, 246, ${inputBorderAnim.value})`,
   }));
@@ -166,6 +175,22 @@ export default function DownloadScreen() {
         if (info) {
           setVideoInfo(info);
           setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
+          // Background pre-resolve CDN URL for the best default quality (no spinner, silent)
+          preResolvedRef.current = null;
+          const bestQ = info.qualities.find((q) => !q.isAudioOnly && (isPremium || !q.isHD))
+            ?? info.qualities.find((q) => !q.isAudioOnly);
+          if (bestQ) {
+            getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((res) => {
+              if (res) {
+                preResolvedRef.current = {
+                  formatId: bestQ.formatId,
+                  directUrl: res.directUrl,
+                  filename: res.filename,
+                  expires: Date.now() + 4 * 60 * 1000,
+                };
+              }
+            }).catch(() => {});
+          }
         }
       }, 700);
     }
@@ -218,8 +243,23 @@ export default function DownloadScreen() {
     if (info) {
       setVideoInfo(info);
       setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
+      preResolvedRef.current = null;
+      const bestQ = info.qualities.find((q) => !q.isAudioOnly && (isPremium || !q.isHD))
+        ?? info.qualities.find((q) => !q.isAudioOnly);
+      if (bestQ) {
+        getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((r) => {
+          if (r) {
+            preResolvedRef.current = {
+              formatId: bestQ.formatId,
+              directUrl: r.directUrl,
+              filename: r.filename,
+              expires: Date.now() + 4 * 60 * 1000,
+            };
+          }
+        }).catch(() => {});
+      }
     }
-  }, [url, fetchPreview, fetchVideoInfo, clearError]);
+  }, [url, fetchPreview, fetchVideoInfo, clearError, isPremium]);
 
   const handleCancelDownload = () => {
     downloadAbortRef.current?.abort();
@@ -258,14 +298,24 @@ export default function DownloadScreen() {
     setNativeFileUri(null);
 
     if (Platform.OS === "web") {
-      // ── WEB: stream through /pipe (server resolves CDN + proxies, no temp file) ──
-      // This NEVER opens a new tab — the download happens inside the app as a blob.
+      // ── WEB: stream through /pipe (server proxies CDN, no temp file, no new tab) ──
       try {
         const controller = new AbortController();
         downloadAbortRef.current = controller;
 
-        // /pipe endpoint: yt-dlp resolves CDN URL (~3-8s) then pipes it straight back.
-        const pipeUrl = getPipeUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+        // Use pre-resolved CDN URL if we have a fresh cache for this quality.
+        // This skips yt-dlp entirely → pipe starts instantly instead of 3-8s wait.
+        const cached = preResolvedRef.current;
+        const cachedUrl =
+          cached &&
+          cached.formatId === quality.formatId &&
+          cached.expires > Date.now()
+            ? cached.directUrl
+            : undefined;
+
+        const pipeUrl = getPipeUrl(
+          videoInfo.originalUrl, quality, videoInfo.title, isPremium, cachedUrl
+        );
 
         setDownloadPhase("downloading");
 
@@ -333,10 +383,19 @@ export default function DownloadScreen() {
     } else {
       // ── NATIVE: direct CDN URL → expo-file-system (fastest, no server round-trip) ──
       try {
-        // Resolve direct CDN URL first (~3-8s) — faster than full server download
-        const direct = await getDirectDownloadUrl(
-          videoInfo.originalUrl, quality, videoInfo.title, isPremium
-        );
+        // Use pre-resolved CDN URL if fresh cache exists for this quality,
+        // otherwise resolve now (~3-8s). If both fail, fall back to stream URL.
+        const cached = preResolvedRef.current;
+        let direct: { directUrl: string; filename: string } | null =
+          cached && cached.formatId === quality.formatId && cached.expires > Date.now()
+            ? { directUrl: cached.directUrl, filename: cached.filename }
+            : null;
+
+        if (!direct) {
+          direct = await getDirectDownloadUrl(
+            videoInfo.originalUrl, quality, videoInfo.title, isPremium
+          );
+        }
 
         const downloadUrl = direct?.directUrl
           ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
@@ -791,20 +850,45 @@ export default function DownloadScreen() {
               </LinearGradient>
             </Pressable>
 
+            {/* ── Big Share button shown after download completes ── */}
+            {downloadedUri ? (
+              <Animated.View entering={FadeInDown} style={styles.shareSuccessWrap}>
+                <View style={styles.shareSuccessBanner}>
+                  <Feather name="check-circle" size={15} color={C.success} />
+                  <Text style={styles.shareSuccessText}>
+                    {lastDownloadedQuality?.quality ?? "Video"} downloaded!
+                  </Text>
+                </View>
+                <Pressable
+                  style={styles.shareFileBigBtn}
+                  onPress={handleShare}
+                  android_ripple={{ color: "rgba(255,255,255,0.15)" }}
+                >
+                  <LinearGradient
+                    colors={["#16A34A", "#15803D"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.shareFileBigGrad}
+                  >
+                    <Feather name="share-2" size={20} color="#fff" />
+                    <View>
+                      <Text style={styles.shareFileBigText}>Share Downloaded File</Text>
+                      <Text style={styles.shareFileBigSub}>Send to friends, WhatsApp, Telegram…</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color="rgba(255,255,255,0.7)" style={{ marginLeft: "auto" }} />
+                  </LinearGradient>
+                </Pressable>
+              </Animated.View>
+            ) : null}
+
+            {/* ── Secondary action row ── */}
             <View style={styles.actionRow}>
-              <Pressable
-                style={[styles.actionBtn, downloadedUri ? styles.actionBtnSuccess : {}]}
-                onPress={handleShare}
-              >
-                <Feather
-                  name="share-2"
-                  size={16}
-                  color={downloadedUri ? C.success : C.accent}
-                />
-                <Text style={[styles.actionBtnText, downloadedUri ? { color: C.success } : {}]}>
-                  {downloadedUri ? "Share File" : "Share"}
-                </Text>
-              </Pressable>
+              {!downloadedUri ? (
+                <Pressable style={styles.actionBtn} onPress={handleShare}>
+                  <Feather name="share-2" size={15} color={C.accent} />
+                  <Text style={styles.actionBtnText}>Share Link</Text>
+                </Pressable>
+              ) : null}
               <Pressable
                 style={styles.actionBtn}
                 onPress={async () => {
@@ -813,27 +897,17 @@ export default function DownloadScreen() {
                   Alert.alert("Copied!", "Link copied to clipboard.");
                 }}
               >
-                <Feather name="copy" size={16} color={C.accent} />
+                <Feather name="copy" size={15} color={C.accent} />
                 <Text style={styles.actionBtnText}>Copy Link</Text>
               </Pressable>
               <Pressable
                 style={styles.actionBtn}
                 onPress={() => Linking.openURL(videoInfo.originalUrl)}
               >
-                <Feather name="external-link" size={16} color={C.accent} />
+                <Feather name="external-link" size={15} color={C.accent} />
                 <Text style={styles.actionBtnText}>Open</Text>
               </Pressable>
             </View>
-
-            {downloadedUri ? (
-              <Animated.View entering={FadeIn} style={styles.downloadedBanner}>
-                <Feather name="check-circle" size={16} color={C.success} />
-                <Text style={styles.downloadedBannerText}>Video downloaded successfully!</Text>
-                <Pressable onPress={handleShare} style={styles.shareNowBtn}>
-                  <Text style={styles.shareNowText}>Share</Text>
-                </Pressable>
-              </Animated.View>
-            ) : null}
 
             <View style={styles.toolsSection}>
               <Text style={styles.sectionLabel}>Tools</Text>
@@ -1234,16 +1308,41 @@ const styles = StyleSheet.create({
   },
   actionBtnText: { color: C.accent, fontSize: 13, fontFamily: "Inter_500Medium" },
   actionBtnSuccess: { borderColor: C.success + "50", backgroundColor: "#0D2A1A" },
-  downloadedBanner: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "#0D2A1A", borderRadius: 12, padding: 14,
+  shareSuccessWrap: { gap: 10 },
+  shareSuccessBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#0D2A1A", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
     borderWidth: 1, borderColor: "#1A4A2A",
   },
-  downloadedBannerText: { flex: 1, color: C.success, fontSize: 13, fontFamily: "Inter_500Medium" },
-  shareNowBtn: {
-    backgroundColor: C.success, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8,
+  shareSuccessText: { color: C.success, fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  shareFileBigBtn: {
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#16A34A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  shareNowText: { color: "#000", fontSize: 12, fontFamily: "Inter_700Bold" },
+  shareFileBigGrad: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    gap: 14,
+  },
+  shareFileBigText: {
+    color: "#fff",
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
+  },
+  shareFileBigSub: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    marginTop: 2,
+  },
   toolsSection: { gap: 10 },
   toolsGrid: { flexDirection: "row", gap: 10 },
   toolCard: {

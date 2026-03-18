@@ -407,9 +407,9 @@ router.get("/direct", async (req: Request, res: Response) => {
 // new tab. The server acts as a transparent pipe — no temp files, no disk I/O.
 
 router.get("/pipe", async (req: Request, res: Response) => {
-  const { url, formatId, quality, isPremium, title } = req.query as {
+  const { url, formatId, quality, isPremium, title, directUrl: preResolvedUrl } = req.query as {
     url?: string; formatId?: string; quality?: string;
-    isPremium?: string; title?: string;
+    isPremium?: string; title?: string; directUrl?: string;
   };
 
   if (!url || !formatId) {
@@ -445,9 +445,54 @@ router.get("/pipe", async (req: Request, res: Response) => {
         ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
         : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
 
+  // ─── Helper: proxy a CDN URL to client ──────────────────────────────────
+  const proxyCdnUrl = async (cdnUrl: string): Promise<void> => {
+    const cdnResp = await fetch(cdnUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": new URL(url).origin,
+        ...(req.headers.range ? { "Range": req.headers.range } : {}),
+      },
+    });
+
+    if (!cdnResp.ok || !cdnResp.body) {
+      throw new Error(`CDN responded ${cdnResp.status}`);
+    }
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Cache-Control", "no-cache");
+    if (cdnResp.headers.get("content-length")) {
+      res.setHeader("Content-Length", cdnResp.headers.get("content-length")!);
+    }
+    if (cdnResp.status === 206) res.status(206);
+
+    const { Readable } = await import("stream");
+    const readable = Readable.fromWeb(cdnResp.body as any);
+    readable.pipe(res);
+    readable.on("error", (e) => {
+      console.error("[pipe] stream error:", e);
+      if (!res.writableEnded) res.destroy();
+    });
+    req.on("close", () => readable.destroy());
+  };
+
+  // ─── Fast path: client already resolved CDN URL, skip yt-dlp entirely ───
+  if (preResolvedUrl && preResolvedUrl.startsWith("http")) {
+    console.log(`[pipe] using pre-resolved URL — skipping yt-dlp`);
+    try {
+      await proxyCdnUrl(preResolvedUrl);
+      console.log(`[pipe] pre-resolved stream OK`);
+      return;
+    } catch (err) {
+      console.warn("[pipe] pre-resolved URL failed, falling back to yt-dlp resolve:", err);
+    }
+  }
+
+  // ─── Normal path: resolve CDN URL via yt-dlp then proxy ─────────────────
   console.log(`[pipe] handler=${handler.name} format=${ytdlpFormat}`);
 
-  // Step 1: Resolve direct CDN URL
   let cdnUrl: string;
   try {
     const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
@@ -477,7 +522,6 @@ router.get("/pipe", async (req: Request, res: Response) => {
     cdnUrl = lines[0];
   } catch (err) {
     console.error("[pipe] URL resolve failed:", err);
-    // Fallback: stream via temp file
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
     res.setHeader("X-Accel-Buffering", "no");
@@ -485,38 +529,9 @@ router.get("/pipe", async (req: Request, res: Response) => {
     return streamViaTemp({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: premiumUser, isAudioOnly });
   }
 
-  // Step 2: Pipe CDN → client (no temp file)
   try {
-    console.log(`[pipe] proxying from CDN...`);
-    const cdnResp = await fetch(cdnUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": new URL(url).origin,
-        "Range": req.headers.range ?? "",
-      },
-    });
-
-    if (!cdnResp.ok || !cdnResp.body) {
-      throw new Error(`CDN responded ${cdnResp.status}`);
-    }
-
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.setHeader("Cache-Control", "no-cache");
-    if (cdnResp.headers.get("content-length")) {
-      res.setHeader("Content-Length", cdnResp.headers.get("content-length")!);
-    }
-    if (cdnResp.status === 206) res.status(206);
-
-    const { Readable } = await import("stream");
-    const readable = Readable.fromWeb(cdnResp.body as any);
-    readable.pipe(res);
-    readable.on("error", (e) => {
-      console.error("[pipe] stream error:", e);
-      if (!res.writableEnded) res.destroy();
-    });
-    req.on("close", () => readable.destroy());
+    console.log(`[pipe] proxying from resolved CDN URL...`);
+    await proxyCdnUrl(cdnUrl);
     console.log(`[pipe] streaming OK`);
   } catch (err) {
     console.error("[pipe] CDN proxy failed, falling back to streamViaTemp:", err);
