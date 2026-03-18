@@ -1,6 +1,7 @@
 // YouTube Handler
 // YouTube returns separate video and audio streams for HD.
-// We prefer MP4 video + M4A audio, then fall back gracefully.
+// We prefer https-protocol (direct byte-range) streams over DASH and HLS
+// because https streams are seekable and mux cleanly to stdout.
 
 import type { PlatformHandler, HandlerConfig } from "./base.js";
 
@@ -13,26 +14,27 @@ export class YouTubeHandler implements PlatformHandler {
 
   getConfig(): HandlerConfig {
     return {
-      // ios is the most reliable client for Shorts + regular videos on servers.
-      // tv_embedded also works for age-gated content. web/mweb are kept as
-      // last-resort fallbacks — they often fail in server environments.
-      // format-sort prefers DASH (dash) over HLS (m3u8) streams to avoid
-      // ffmpeg HLS-to-mp4 muxing failures when piping to stdout.
+      // Use web client first — it returns https/DASH streams which ffmpeg
+      // can mux to stdout reliably. ios client is used for Shorts fallback.
       extraArgs: [
-        "--extractor-args", "youtube:player_client=ios,tv_embedded,web",
-        "--format-sort", "+proto:dash,https:http",
-        "--hls-prefer-native",
+        "--extractor-args", "youtube:player_client=web,tv_embedded,ios",
+        // Prefer direct https streams > DASH > HLS to avoid ffmpeg stdout failures
+        "--format-sort", "+proto:https:dash:m3u8",
       ],
       preferredFormats: [
-        "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best",
+        "best[ext=mp4][acodec!=none][vcodec!=none][height<=720]/bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
         "best[ext=mp4][height<=480]/best[height<=480]",
         "best[ext=mp4]/best",
         "worst",
       ],
       downloadFormatOverride: (formatId: string, isAudio: boolean) => {
         if (isAudio) return `${formatId}/bestaudio[ext=m4a]/bestaudio`;
-        // Prefer DASH video+DASH audio combination; HLS streams fail with stdout muxing
-        return `${formatId}[protocol=dash]+bestaudio[ext=m4a][protocol=dash]/${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+        // Complex selectors (sentinel formats with / chains) are used as-is —
+        // appending protocol filters to a multi-clause selector is invalid syntax.
+        if (formatId.includes("/")) return formatId;
+        // Simple numeric/named format ID: build a robust fallback chain.
+        // Avoids HLS by not specifying protocol=m3u8; --format-sort already deprioritises it.
+        return `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
       },
     };
   }

@@ -5,7 +5,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { spawn } from "child_process";
 import { detectPlatform, validateUrl } from "../services/platform-detect.js";
-import { extractInfoRobust, processQualities, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
+import { extractInfoRobust, processQualities, resolvePlaybackUrl, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
 import { previewCache, infoCache } from "../services/metadata-cache.js";
 import { getHandler } from "../handlers/index.js";
 
@@ -219,7 +219,10 @@ router.post("/info", async (req: Request, res: Response) => {
 });
 
 // ---- GET /play ------------------------------------------------------------
-// Streams video for in-app playback (pre-muxed stream, piped directly).
+// Resolves a direct playable video URL using yt-dlp -g.
+// Returns JSON { playUrl } — no server-side streaming.
+// The client plays the URL directly; this avoids seekability issues
+// and ffmpeg HLS-to-mp4 muxing failures when piping to stdout.
 
 router.get("/play", async (req: Request, res: Response) => {
   const { url } = req.query as { url?: string };
@@ -228,58 +231,25 @@ router.get("/play", async (req: Request, res: Response) => {
     return;
   }
 
-  console.log(`[play] url=${url}`);
-  try {
-    const handler = getHandler(url);
-    const cfg = handler.getConfig();
+  console.log(`[play] resolving direct URL for: ${url}`);
+  const handler = getHandler(url);
 
-    const format = [
-      "best[acodec!=none][vcodec!=none][height<=480][ext=mp4]",
-      "best[acodec!=none][vcodec!=none][ext=mp4]",
-      "best[acodec!=none][vcodec!=none][height<=480]",
-      "best[acodec!=none][vcodec!=none]",
-      "18",
-      "best[height<=360]",
-      "worst",
-    ].join("/");
+  const { result, errInfo, usedHeartbeat } = await withHeartbeat(
+    res,
+    (async () => {
+      const playUrl = await resolvePlaybackUrl(url, handler.getConfig());
+      return { playUrl };
+    })(),
+  );
 
-    res.setHeader("Content-Type", "video/mp4");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Transfer-Encoding", "chunked");
-
-    const proc = spawn(YTDLP, [
-      "--no-warnings", "--no-playlist",
-      "--no-check-certificate",
-      "--buffer-size", "16K",
-      ...cfg.extraArgs,
-      "-f", format,
-      "-o", "-",
-      url,
-    ], { stdio: ["ignore", "pipe", "pipe"] });
-
-    proc.stderr.on("data", (d: Buffer) => {
-      const line = d.toString().trim();
-      if (line && !line.startsWith("[debug]")) console.log("[play-yt-dlp]", line);
-    });
-
-    proc.stdout.pipe(res);
-    req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
-
-    proc.on("error", (err) => {
-      console.error("[play] spawn error:", err);
-      if (!res.headersSent) res.status(500).json({ error: "PLAY_ERROR", message: "Could not start playback." });
-    });
-
-    proc.on("close", (code) => {
-      if (code !== 0 && code !== null) console.warn(`[play] yt-dlp exited ${code}`);
-    });
-  } catch (err) {
-    console.error("[play] error:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "PLAY_ERROR", message: "Could not load video for playback." });
-    }
+  if (errInfo) {
+    console.error("[play] error:", errInfo.code);
+    endHeartbeat(res, usedHeartbeat, { error: "PLAY_UNAVAILABLE", message: "Preview not available for this video." }, 404);
+    return;
   }
+
+  console.log(`[play] resolved OK`);
+  endHeartbeat(res, usedHeartbeat, result!);
 });
 
 // ---- GET /stream ----------------------------------------------------------

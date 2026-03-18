@@ -87,7 +87,6 @@ export default function DownloadScreen() {
   const {
     fetchPreview,
     fetchVideoInfo,
-    getPlayUrl,
     getStreamUrl,
     isLoadingPreview,
     isLoadingInfo,
@@ -106,6 +105,7 @@ export default function DownloadScreen() {
   const [hashtagText, setHashtagText] = useState<string | null>(null);
   const [showCaptions, setShowCaptions] = useState(false);
   const [showHashtags, setShowHashtags] = useState(false);
+  const [isPlayModalOpen, setIsPlayModalOpen] = useState(false);
   const [videoModalUrl, setVideoModalUrl] = useState<string | null>(null);
   const [videoPlayerError, setVideoPlayerError] = useState(false);
   const [videoPlayerLoading, setVideoPlayerLoading] = useState(false);
@@ -137,7 +137,10 @@ export default function DownloadScreen() {
     setHashtagText(null);
     setShowCaptions(false);
     setShowHashtags(false);
+    setIsPlayModalOpen(false);
     setVideoModalUrl(null);
+    setVideoPlayerError(false);
+    setVideoPlayerLoading(false);
   };
 
   const handleUrlChange = (text: string) => {
@@ -455,16 +458,31 @@ export default function DownloadScreen() {
 
   const handlePlay = async (videoUrl: string) => {
     if (Platform.OS === "web") {
+      // Open modal immediately with loading state, then resolve the direct URL.
       setVideoPlayerError(false);
       setVideoPlayerLoading(true);
-      setVideoModalUrl(getPlayUrl(videoUrl));
-      // Timeout: yt-dlp needs ~15s to negotiate the stream; give it 45s before
-      // showing the error state.
-      if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
-      videoLoadTimerRef.current = setTimeout(() => {
+      setVideoModalUrl(null);
+      setIsPlayModalOpen(true);
+
+      try {
+        const BASE = process.env.EXPO_PUBLIC_DOMAIN
+          ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+          : "";
+        const params = new URLSearchParams({ url: videoUrl });
+        const res = await fetch(`${BASE}/api/video/play?${params.toString()}`);
+        const text = await res.text();
+        const data = JSON.parse(text.trim()) as Record<string, unknown>;
+
+        if (typeof data.playUrl === "string" && data.playUrl.startsWith("http")) {
+          setVideoModalUrl(data.playUrl);
+        } else {
+          setVideoPlayerError(true);
+          setVideoPlayerLoading(false);
+        }
+      } catch {
         setVideoPlayerError(true);
         setVideoPlayerLoading(false);
-      }, 45000);
+      }
     } else {
       await WebBrowser.openBrowserAsync(videoUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
@@ -474,6 +492,7 @@ export default function DownloadScreen() {
 
   const closeVideoModal = () => {
     if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
+    setIsPlayModalOpen(false);
     setVideoModalUrl(null);
     setVideoPlayerError(false);
     setVideoPlayerLoading(false);
@@ -904,9 +923,9 @@ export default function DownloadScreen() {
         </Animated.View>
       ) : null}
 
-      {Platform.OS === "web" && videoModalUrl ? (
+      {Platform.OS === "web" && isPlayModalOpen ? (
         <Modal
-          visible={!!videoModalUrl}
+          visible={isPlayModalOpen}
           transparent
           animationType="fade"
           onRequestClose={closeVideoModal}
@@ -934,20 +953,25 @@ export default function DownloadScreen() {
                 {videoPlayerError ? (
                   <View style={styles.videoErrorState}>
                     <Feather name="alert-circle" size={36} color={C.error} />
-                    <Text style={styles.videoErrorText}>Could not load video</Text>
-                    <Text style={styles.videoErrorSub}>Try downloading it instead</Text>
+                    <Text style={styles.videoErrorText}>Preview not available</Text>
+                    <Text style={styles.videoErrorSub}>Try downloading the video instead</Text>
+                  </View>
+                ) : !videoModalUrl ? (
+                  <View style={styles.videoLoadingOverlay}>
+                    <ActivityIndicator size="large" color={C.accent} />
+                    <Text style={styles.videoLoadingText}>Preparing preview…</Text>
                   </View>
                 ) : (
                   <>
                     {videoPlayerLoading ? (
                       <View style={styles.videoLoadingOverlay}>
                         <ActivityIndicator size="large" color={C.accent} />
-                        <Text style={styles.videoLoadingText}>Loading video...</Text>
+                        <Text style={styles.videoLoadingText}>Loading video…</Text>
                       </View>
                     ) : null}
                     {/* @ts-ignore - web only */}
                     <video
-                      src={videoModalUrl!}
+                      src={videoModalUrl}
                       controls
                       autoPlay
                       style={{
@@ -956,11 +980,9 @@ export default function DownloadScreen() {
                         opacity: videoPlayerLoading ? 0 : 1,
                       }}
                       onCanPlay={() => {
-                        if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
                         setVideoPlayerLoading(false);
                       }}
                       onError={() => {
-                        if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
                         setVideoPlayerError(true);
                         setVideoPlayerLoading(false);
                       }}
