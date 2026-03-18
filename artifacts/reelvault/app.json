@@ -36,7 +36,9 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "extraMavenRepos": ["https://maven.start.io/"]
+            "extraMavenRepos": [
+              "https://maven.start.io/"
+            ]
           }
         }
       ]
@@ -44,6 +46,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5c663dee-b927-4dd7-a0e1-69265cf9032a"
+      }
     }
   }
 }

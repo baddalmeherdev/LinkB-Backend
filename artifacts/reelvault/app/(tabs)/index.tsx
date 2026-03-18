@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import UnityAds from "react-native-unity-ads";
+import { initUnityAds, showRewardedAd, showInterstitialAd } from "@/utils/unityAds";
 import {
   ActivityIndicator,
   Alert,
@@ -40,10 +40,6 @@ import { useApp, type VideoInfo, type VideoQuality } from "@/context/AppContext"
 import { useVideoApi } from "@/hooks/useVideoApi";
 
 const C = Colors.dark;
-
-const UNITY_GAME_ID = "6069290";
-const REWARDED_PLACEMENT = "Rewarded_Android";
-const INTERSTITIAL_PLACEMENT = "Interstitial_Android";
 
 function isValidUrl(text: string): boolean {
   return text.startsWith("http://") || text.startsWith("https://");
@@ -213,46 +209,8 @@ export default function DownloadScreen() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS === "android") {
-      try {
-        UnityAds.initialize(UNITY_GAME_ID, false);
-      } catch {}
-    }
+    initUnityAds();
   }, []);
-
-  const showRewardedAd = (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      if (Platform.OS !== "android") { resolve(true); return; }
-      try {
-        let settled = false;
-        const onFinish = (placementId: string, result: string) => {
-          if (settled) return;
-          settled = true;
-          UnityAds.removeEventListener("onFinish", onFinish);
-          resolve(result === "completed");
-        };
-        const onError = () => {
-          if (settled) return;
-          settled = true;
-          UnityAds.removeEventListener("onFinish", onFinish);
-          UnityAds.removeEventListener("onError", onError);
-          resolve(false);
-        };
-        UnityAds.addEventListener("onFinish", onFinish);
-        UnityAds.addEventListener("onError", onError);
-        UnityAds.show(REWARDED_PLACEMENT);
-      } catch {
-        resolve(false);
-      }
-    });
-  };
-
-  const showInterstitialAd = () => {
-    if (Platform.OS !== "android") return;
-    try {
-      UnityAds.show(INTERSTITIAL_PLACEMENT);
-    } catch {}
-  };
 
   useEffect(() => {
     if (autoUrl && typeof autoUrl === "string" && isValidUrl(autoUrl)) {
