@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppProvider } from "@/context/AppContext";
@@ -20,6 +20,10 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient();
 const C = Colors.dark;
+
+// Font loading timeout — if fonts haven't loaded after this many ms, show the
+// app anyway to avoid the Expo Router "6000ms timeout exceeded" error.
+const FONT_TIMEOUT_MS = 4000;
 
 function injectWebFonts() {
   if (typeof document === "undefined") return;
@@ -87,28 +91,37 @@ function NativeLayout() {
     Inter_700Bold,
   });
 
+  // Safety timeout — never block navigation for more than FONT_TIMEOUT_MS
+  const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    const t = setTimeout(() => setTimedOut(true), FONT_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  const ready = fontsLoaded || !!fontError || timedOut;
+
+  useEffect(() => {
+    if (ready) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [fontsLoaded, fontError]);
+  }, [ready]);
 
-  if (!fontsLoaded && !fontError) return null;
+  // Show a blank dark screen instead of null so Expo Router never hits its
+  // 6000ms navigation timeout.
+  if (!ready) {
+    return <View style={{ flex: 1, backgroundColor: C.background }} />;
+  }
 
   return <RootLayoutNav />;
 }
 
 function WebLayout() {
-  const [ready, setReady] = useState(false);
-
   useEffect(() => {
     injectWebFonts();
     SplashScreen.hideAsync().catch(() => {});
-    const t = setTimeout(() => setReady(true), 50);
-    return () => clearTimeout(t);
   }, []);
 
-  if (!ready) return null;
+  // On web there is no font-loading gate — render immediately.
   return <RootLayoutNav />;
 }
 

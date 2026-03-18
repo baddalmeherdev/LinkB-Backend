@@ -106,6 +106,7 @@ export default function DownloadScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputBorderAnim = useSharedValue(0);
 
   const inputStyle = useAnimatedStyle(() => ({
@@ -149,6 +150,7 @@ export default function DownloadScreen() {
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
     };
   }, []);
 
@@ -299,11 +301,24 @@ export default function DownloadScreen() {
       setVideoPlayerError(false);
       setVideoPlayerLoading(true);
       setVideoModalUrl(getPlayUrl(videoUrl));
+      // Timeout: if video hasn't started in 20s, show error
+      if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
+      videoLoadTimerRef.current = setTimeout(() => {
+        setVideoPlayerError(true);
+        setVideoPlayerLoading(false);
+      }, 20000);
     } else {
       await WebBrowser.openBrowserAsync(videoUrl, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
       });
     }
+  };
+
+  const closeVideoModal = () => {
+    if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
+    setVideoModalUrl(null);
+    setVideoPlayerError(false);
+    setVideoPlayerLoading(false);
   };
 
   const handleTrim = () => {
@@ -662,11 +677,11 @@ export default function DownloadScreen() {
           visible={!!videoModalUrl}
           transparent
           animationType="fade"
-          onRequestClose={() => { setVideoModalUrl(null); setVideoPlayerError(false); }}
+          onRequestClose={closeVideoModal}
         >
           <Pressable
             style={styles.videoModalOverlay}
-            onPress={() => { setVideoModalUrl(null); setVideoPlayerError(false); }}
+            onPress={closeVideoModal}
           >
             <Pressable style={styles.videoModalContainer} onPress={(e) => e.stopPropagation()}>
               <View style={styles.videoModalHeader}>
@@ -677,7 +692,7 @@ export default function DownloadScreen() {
                   </Text>
                 </View>
                 <Pressable
-                  onPress={() => { setVideoModalUrl(null); setVideoPlayerError(false); }}
+                  onPress={closeVideoModal}
                   style={styles.videoModalClose}
                 >
                   <Feather name="x" size={18} color="#fff" />
@@ -708,8 +723,15 @@ export default function DownloadScreen() {
                         backgroundColor: "#000",
                         opacity: videoPlayerLoading ? 0 : 1,
                       }}
-                      onCanPlay={() => setVideoPlayerLoading(false)}
-                      onError={() => { setVideoPlayerError(true); setVideoPlayerLoading(false); }}
+                      onCanPlay={() => {
+                        if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
+                        setVideoPlayerLoading(false);
+                      }}
+                      onError={() => {
+                        if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
+                        setVideoPlayerError(true);
+                        setVideoPlayerLoading(false);
+                      }}
                     />
                   </>
                 )}

@@ -5,8 +5,16 @@ import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import Colors from "@/constants/colors";
+
+function safeIsLiquidGlassAvailable(): boolean {
+  try {
+    return isLiquidGlassAvailable();
+  } catch {
+    return false;
+  }
+}
 
 const C = Colors.dark;
 
@@ -96,7 +104,7 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
+  if (safeIsLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }
   return <ClassicTabLayout />;
