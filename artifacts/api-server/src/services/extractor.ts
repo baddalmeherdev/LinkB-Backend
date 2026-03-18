@@ -162,7 +162,7 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
         ext: "mp4",
         filesize: closest.filesize ?? closest.filesize_approx ?? null,
         isAudioOnly: false,
-        isHD: h >= 720,
+        isHD: h > 720,
       });
     }
   }

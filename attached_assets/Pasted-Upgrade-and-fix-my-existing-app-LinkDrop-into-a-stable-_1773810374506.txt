@@ -1,0 +1,127 @@
+Upgrade and fix my existing app "LinkDrop" into a stable, production-ready universal downloader with zero major bugs, smooth performance, and a professional UI.
+
+Main Goal:
+Fix all current bugs, errors, broken downloads, UI glitches, and make the app reliable, fast, and clean like a premium product.
+
+-----------------------------------
+1. BUG FIXING & STABILITY
+-----------------------------------
+- Identify and fix all runtime errors (frontend + backend)
+- Fix API failures, invalid responses, and broken downloads
+- Ensure every valid public link returns proper metadata or a clear error
+- Add try/catch in all backend routes
+- Add proper error messages in UI (no blank screen)
+- Fix loading issues and infinite loaders
+- Ensure app works on mobile devices smoothly
+
+-----------------------------------
+2. STRONG DOWNLOAD SYSTEM
+-----------------------------------
+- Improve yt-dlp integration:
+  - Always fetch best formats
+  - Merge audio + video if needed
+  - Retry download automatically if it fails
+- Add fallback system if first attempt fails
+- Ensure maximum supported sites (yt-dlp based)
+- Show:
+  - Title
+  - Thumbnail
+  - Duration
+  - Available qualities
+- Ensure downloads actually work (not broken links)
+
+-----------------------------------
+3. PREMIUM QUALITY LOCK
+-----------------------------------
+- Free users:
+  - Allow download up to 720p only
+- Premium users:
+  - Unlock 1080p and BEST quality
+- If free user clicks higher quality:
+  - Show popup: "Upgrade to Premium to unlock HD+"
+- Store premium status in localStorage
+
+-----------------------------------
+4. BUILT-IN BROWSER SECTION (VERY IMPORTANT)
+-----------------------------------
+- Add a new tab: "Browser"
+- Create a simple in-app browser using iframe/webview
+- Add:
+  - URL/search bar
+  - Back / Forward / Reload buttons
+- User can browse websites inside app
+- Add button: "Download this video"
+  - It captures current page URL
+  - Sends it to downloader automatically
+
+-----------------------------------
+5. UI/UX IMPROVEMENT (PROFESSIONAL)
+-----------------------------------
+- Dark modern UI (like premium apps)
+- Smooth animations
+- Card layout for videos
+- Clean buttons:
+  - Download
+  - Share
+  - Copy link
+- Proper spacing, icons, and typography
+- Mobile-first design (feels like real Android app)
+
+-----------------------------------
+6. DOWNLOAD MANAGER
+-----------------------------------
+- Show active downloads
+- Show progress bar
+- Show completed downloads
+- Add download history section
+- Allow re-download
+
+-----------------------------------
+7. PERFORMANCE OPTIMIZATION
+-----------------------------------
+- Use async/await properly
+- Reduce API response time
+- Add simple caching for metadata
+- Prevent duplicate requests
+
+-----------------------------------
+8. ERROR HANDLING SYSTEM
+-----------------------------------
+Show proper messages:
+- "Invalid link"
+- "Private or unsupported video"
+- "Download failed, retry"
+- "Server busy, try again"
+
+-----------------------------------
+9. MONETIZATION SYSTEM
+-----------------------------------
+- Keep Premium button
+- Add:
+  - "Watch Ad to Unlock" (UI placeholder)
+- UPI Payment section:
+  - UPI ID: winuptournament@fam
+  - Button: Pay Now
+  - After click: "I have paid"
+  - Unlock premium
+
+-----------------------------------
+10. SAFETY RULE
+-----------------------------------
+- Only allow public content downloads
+- Add disclaimer:
+  "Use only for personal and permitted content"
+
+-----------------------------------
+11. FINAL OUTPUT
+-----------------------------------
+- Fully fixed frontend + backend code
+- Clean folder structure
+- No major bugs
+- Ready to run on Replit
+- Clear instructions to start server
+
+Important:
+Focus on stability, working downloads, and clean UI.
+Do not leave incomplete features.
+Ensure everything works end-to-end without breaking.

@@ -87,15 +87,20 @@ Express 5 API server. Routes:
 ### `artifacts/reelvault` (`@workspace/reelvault`)
 
 Expo React Native app. Screens:
-- `app/(tabs)/index.tsx` — Download screen (main)
-- `app/(tabs)/history.tsx` — Download history
-- `app/(tabs)/premium.tsx` — Premium/UPI payment screen
+- `app/(tabs)/index.tsx` — Download screen (main), supports `autoUrl` param from browser tab
+- `app/(tabs)/browser.tsx` — In-app browser (WebView native, iframe web) with "Download this video" button
+- `app/(tabs)/history.tsx` — Download history with re-download support
+- `app/(tabs)/premium.tsx` — Premium/UPI payment + Watch Ad placeholder
 
 Context:
 - `context/AppContext.tsx` — isPremium, history, addToHistory, clearHistory
 
 Hooks:
-- `hooks/useVideoApi.ts` — fetchVideoInfo, fetchDownloadLink
+- `hooks/useVideoApi.ts` — fetchPreview, fetchVideoInfo, getPlayUrl, getStreamUrl
+
+Quality lock:
+- Free: Audio Only, up to 720p (inclusive)
+- Premium: 1080p, 1440p, 4K
 
 ## Running
 

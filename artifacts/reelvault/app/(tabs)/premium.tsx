@@ -403,6 +403,24 @@ export default function PremiumScreen() {
             <MaterialCommunityIcons name="contactless-payment" size={20} color="#000" />
             <Text style={styles.payBtnText}>Pay ₹99 via UPI</Text>
           </Pressable>
+          <View style={styles.orDivider}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.orLine} />
+          </View>
+          <Pressable
+            style={({ pressed }) => [styles.watchAdBtn, { opacity: pressed ? 0.85 : 1 }]}
+            onPress={() =>
+              Alert.alert(
+                "Watch Ad",
+                "Ads are not available right now. Please pay via UPI to unlock Premium.",
+                [{ text: "OK" }]
+              )
+            }
+          >
+            <Feather name="play-circle" size={18} color={C.accent} />
+            <Text style={styles.watchAdText}>Watch Ad to Unlock (coming soon)</Text>
+          </Pressable>
           <Text style={styles.disclaimer}>
             Enter UTR number after payment → Premium unlocks instantly
           </Text>
@@ -630,6 +648,38 @@ const styles = StyleSheet.create({
     color: "#000",
     fontSize: 16,
     fontFamily: "Inter_700Bold",
+  },
+  orDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: C.surfaceBorder,
+  },
+  orText: {
+    color: C.textMuted,
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    letterSpacing: 1,
+  },
+  watchAdBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: C.accent + "50",
+  },
+  watchAdText: {
+    color: C.accent,
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
   },
   disclaimer: {
     color: C.textMuted,

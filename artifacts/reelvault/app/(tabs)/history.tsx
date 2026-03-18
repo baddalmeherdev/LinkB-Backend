@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
@@ -35,9 +36,11 @@ function formatRelativeTime(timestamp: number): string {
 function HistoryItem({
   item,
   onDelete,
+  onRedownload,
 }: {
   item: DownloadHistoryItem;
   onDelete: (id: string) => void;
+  onRedownload: (item: DownloadHistoryItem) => void;
 }) {
   return (
     <Animated.View entering={FadeInDown} exiting={FadeOutLeft} style={styles.itemCard}>
@@ -60,6 +63,16 @@ function HistoryItem({
           </View>
         </View>
         <Text style={styles.itemTime}>{formatRelativeTime(item.downloadedAt)}</Text>
+        <View style={styles.itemActions}>
+          <Pressable
+            style={styles.redownloadBtn}
+            onPress={() => onRedownload(item)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="refresh-cw" size={12} color={C.accent} />
+            <Text style={styles.redownloadText}>Re-download</Text>
+          </Pressable>
+        </View>
       </View>
       <Pressable
         onPress={() => onDelete(item.id)}
@@ -74,12 +87,18 @@ function HistoryItem({
 
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { history, removeFromHistory, clearHistory } = useApp();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const handleDelete = (id: string) => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     removeFromHistory(id);
+  };
+
+  const handleRedownload = (item: DownloadHistoryItem) => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({ pathname: "/(tabs)/", params: { autoUrl: item.url } });
   };
 
   const handleClearAll = () => {
@@ -117,7 +136,7 @@ export default function HistoryScreen() {
         data={history}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <HistoryItem item={item} onDelete={handleDelete} />
+          <HistoryItem item={item} onDelete={handleDelete} onRedownload={handleRedownload} />
         )}
         contentContainerStyle={[
           styles.listContent,
@@ -234,6 +253,26 @@ const styles = StyleSheet.create({
     color: C.textMuted,
     fontSize: 11,
     fontFamily: "Inter_400Regular",
+  },
+  itemActions: {
+    flexDirection: "row",
+    marginTop: 4,
+  },
+  redownloadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#0D1A2A",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: C.accent + "50",
+  },
+  redownloadText: {
+    color: C.accent,
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
   },
   deleteBtn: {
     padding: 16,

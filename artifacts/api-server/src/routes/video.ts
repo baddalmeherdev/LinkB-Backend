@@ -253,7 +253,7 @@ router.get("/stream", async (req: Request, res: Response) => {
   }
 
   const premiumUser = isPremium === "true";
-  const isHdFormat = ["720p", "1080p", "1440p", "2160p"].includes(quality ?? "");
+  const isHdFormat = ["1080p", "1440p", "2160p"].includes(quality ?? "");
   if (isHdFormat && !premiumUser) {
     res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require Premium." });
     return;

@@ -59,6 +59,18 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="browser"
+        options={{
+          title: "Browser",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="globe" tintColor={color} size={24} />
+            ) : (
+              <Feather name="globe" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
         name="premium"
         options={{
           title: "Premium",

@@ -2,6 +2,7 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -79,6 +80,7 @@ function generateHashtags(title: string, platform: string): string {
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
   const { isPremium, addToHistory } = useApp();
+  const { autoUrl } = useLocalSearchParams<{ autoUrl?: string }>();
   const {
     fetchPreview,
     fetchVideoInfo,
@@ -153,6 +155,12 @@ export default function DownloadScreen() {
       if (videoLoadTimerRef.current) clearTimeout(videoLoadTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (autoUrl && typeof autoUrl === "string" && isValidUrl(autoUrl)) {
+      handleUrlChange(autoUrl);
+    }
+  }, [autoUrl]);
 
   const handlePaste = async () => {
     const text = await Clipboard.getStringAsync();
