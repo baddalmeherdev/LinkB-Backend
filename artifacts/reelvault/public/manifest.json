@@ -28,7 +28,7 @@
     "method": "GET",
     "params": {
       "url": "autoUrl",
-      "text": "autoUrl",
+      "text": "shareText",
       "title": "title"
     }
   },

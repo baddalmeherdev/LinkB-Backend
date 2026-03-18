@@ -623,7 +623,7 @@ export default function DownloadScreen() {
 
             <View style={styles.actionRow}>
               <Pressable
-                style={styles.actionBtn}
+                style={[styles.actionBtn, downloadedUri ? styles.actionBtnSuccess : {}]}
                 onPress={handleShare}
               >
                 <Feather
@@ -632,7 +632,7 @@ export default function DownloadScreen() {
                   color={downloadedUri ? C.success : C.accent}
                 />
                 <Text style={[styles.actionBtnText, downloadedUri ? { color: C.success } : {}]}>
-                  {downloadedUri ? "Share Video" : "Share"}
+                  {downloadedUri ? "Share File" : "Share"}
                 </Text>
               </Pressable>
               <Pressable
@@ -763,6 +763,13 @@ export default function DownloadScreen() {
               </View>
             </View>
 
+            <View style={styles.inlineDisclaimer}>
+              <Feather name="shield" size={11} color={C.textMuted} />
+              <Text style={styles.inlineDisclaimerText}>
+                Use for personal and permitted content only.
+              </Text>
+            </View>
+
           </Animated.View>
         ) : null}
 
@@ -815,7 +822,7 @@ export default function DownloadScreen() {
             <View style={styles.disclaimerBox}>
               <Feather name="shield" size={12} color={C.textMuted} />
               <Text style={styles.disclaimerText}>
-                Download only content you have rights to use. Respect creators and copyright laws.
+                Use for personal and permitted content only. Respect creators and copyright laws.
               </Text>
             </View>
           </Animated.View>
@@ -969,6 +976,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.surfaceBorder,
   },
   actionBtnText: { color: C.accent, fontSize: 13, fontFamily: "Inter_500Medium" },
+  actionBtnSuccess: { borderColor: C.success + "50", backgroundColor: "#0D2A1A" },
   downloadedBanner: {
     flexDirection: "row", alignItems: "center", gap: 10,
     backgroundColor: "#0D2A1A", borderRadius: 12, padding: 14,
@@ -1072,6 +1080,13 @@ const styles = StyleSheet.create({
   disclaimerText: {
     flex: 1, color: C.textMuted, fontSize: 11,
     fontFamily: "Inter_400Regular", lineHeight: 16,
+  },
+  inlineDisclaimer: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    justifyContent: "center", paddingVertical: 8,
+  },
+  inlineDisclaimerText: {
+    color: C.textMuted, fontSize: 11, fontFamily: "Inter_400Regular",
   },
   videoModalOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.88)",

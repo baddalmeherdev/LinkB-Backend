@@ -272,8 +272,8 @@ router.get("/stream", async (req: Request, res: Response) => {
   const ytdlpFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
     : isAudioOnly
-      ? `${formatId}/bestaudio[ext=m4a]/bestaudio`
-      : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio/${formatId}/best[ext=mp4]/best`;
+      ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
+      : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
 
   console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
 
@@ -340,6 +340,8 @@ async function streamWithWatermark(opts: {
     await execFileAsync(YTDLP, [
       "--no-warnings", "--no-playlist",
       "--no-check-certificate",
+      "--concurrent-fragments", "4",
+      "--buffer-size", "16K",
       ...extraArgs,
       "-f", formatId,
       "--merge-output-format", "mp4",
@@ -404,6 +406,8 @@ function streamDirect(opts: {
   const proc = spawn(YTDLP, [
     "--no-warnings", "--no-playlist",
     "--no-check-certificate",
+    "--concurrent-fragments", "4",
+    "--buffer-size", "16K",
     ...extraArgs,
     "-f", format,
     "--merge-output-format", ext,

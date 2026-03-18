@@ -17,6 +17,8 @@ const BASE_ARGS = [
   "--socket-timeout", "30",
   "--extractor-retries", "3",
   "--no-check-certificate",
+  "--concurrent-fragments", "4",
+  "--buffer-size", "16K",
 ];
 
 // Rotate user agents on retry to avoid rate-limiting

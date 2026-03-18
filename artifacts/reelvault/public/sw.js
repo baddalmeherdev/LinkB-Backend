@@ -1,7 +1,7 @@
 // LinkDrop Service Worker
 // Handles PWA installation, basic caching, and share target
 
-const CACHE_NAME = "linkdrop-v1";
+const CACHE_NAME = "linkdrop-v2";
 const STATIC_ASSETS = ["/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {

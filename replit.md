@@ -50,21 +50,31 @@ artifacts-monorepo/
 - Share and copy link buttons
 
 ### Advanced Features
-- AI Caption generator (demo/placeholder)
-- Hashtag suggestions (demo/placeholder)
+- PWA Share Target — app appears in Android/iOS share menu; receives shared URL/text and auto-fetches
+- Smart Share button — shows "Share File" (green) when a file is downloaded, shares actual file via Web Share API / expo-sharing
+- Auto progress bar during download (real content-length tracking or smooth fake progress)
+- AI Caption generator + Hashtag suggestions
 - Video trim (redirects to browser)
 - Audio-only download option
+- Disclaimer: "Use for personal and permitted content only" shown in results and empty state
 
 ### Premium / Monetization
 - UPI payment: winuptournament@fam (₹99 lifetime)
-- Premium unlocks: HD downloads, no ads, unlimited downloads
+- Premium unlocks: HD (1080p+) downloads, no watermark, unlimited history
+- Free users: up to 720p, downloads watermarked via ffmpeg
+- UTR verification flow for manual payment confirmation
 - Premium stored in AsyncStorage
-- Ad banner for free users (placeholder for AdMob)
+
+### Download Optimization
+- `--concurrent-fragments 4` and `--buffer-size 16K` on all yt-dlp calls
+- Extended format fallback chain for better compatibility across platforms
+- Server-side yt-dlp + ffmpeg with retry + user-agent rotation
 
 ### Security
 - URL validation (HTTP/HTTPS only)
-- Rate limiting: 10 req/min per IP
+- Rate limiting: 30 req/min per IP
 - Server-side yt-dlp processing
+- Watermark added to free downloads
 
 ## API Endpoints
 

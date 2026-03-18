@@ -27,7 +27,7 @@ const FEATURES = [
     title: "Video Download",
     desc: "Download videos from 2000+ sites",
     free: true,
-    freeDetail: "Up to 480p",
+    freeDetail: "Up to 720p",
     premiumDetail: "Up to 4K Ultra HD",
   },
   {
