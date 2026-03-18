@@ -2,9 +2,14 @@ import { useState } from "react";
 import type { VideoInfo, VideoQuality } from "@/context/AppContext";
 import type { PreviewData } from "@/components/LinkPreviewCard";
 
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+// EXPO_PUBLIC_API_URL  → set this in eas.json "env" for production APK builds
+//                        e.g. "https://your-deployed-api.replit.app"
+// EXPO_PUBLIC_DOMAIN   → set automatically by Replit for web preview only
+const BASE_URL: string =
+  process.env.EXPO_PUBLIC_API_URL ??
+  (process.env.EXPO_PUBLIC_DOMAIN
+    ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+    : "");
 
 // Maximum time to wait for a single API attempt (90 s).
 // yt-dlp can take 10-45 s on first run; we give generous room.

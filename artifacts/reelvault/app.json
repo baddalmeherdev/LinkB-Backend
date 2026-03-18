@@ -17,7 +17,16 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "com.badalmeher.linkbdownloader"
+      "package": "com.badalmeher.linkbdownloader",
+      "jsEngine": "hermes",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#0A0A0F"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -36,6 +45,7 @@
         {
           "android": {
             "minSdkVersion": 24,
+            "enableProguardInReleaseBuilds": true,
             "extraMavenRepos": [
               "https://maven.start.io/"
             ]
