@@ -172,10 +172,10 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
   // Fallback when no formats are listed (direct-URL sites)
   if (qualities.filter((q) => !q.isAudioOnly).length === 0) {
     qualities.push({
-      formatId: "best",
-      quality: "Best",
+      formatId: "best[height<=720]/best[ext=mp4]/best",
+      quality: "720p",
       label: "Best Available",
-      resolution: "auto",
+      resolution: "up to 720p",
       ext: "mp4",
       filesize: null,
       isAudioOnly: false,
@@ -183,9 +183,40 @@ export function processQualities(info: ExtractedInfo): QualityOption[] {
     });
   }
 
+  // Always add a "Best Free (720p)" sentinel so free users always have a
+  // clear highest-quality option even if the source has no discrete 720p format.
+  const hasTrueHD = qualities.some((q) => !q.isAudioOnly && q.isHD);
+  const hasFree720 = qualities.some((q) => !q.isAudioOnly && !q.isHD && parseInt(q.quality) >= 720);
+  if (!hasFree720 || hasTrueHD) {
+    // Insert a yt-dlp-selector based "720p" option that picks the best
+    // combined audio+video stream at or below 720p.
+    const sentinel: QualityOption = {
+      formatId: "bestvideo[height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best[height<=720]",
+      quality: "720p",
+      label: "Best Free HD",
+      resolution: "up to 720p",
+      ext: "mp4",
+      filesize: null,
+      isAudioOnly: false,
+      isHD: false,
+    };
+    // Only add if we don't already have a "720p" entry
+    if (!qualities.some((q) => q.quality === "720p")) {
+      qualities.push(sentinel);
+    }
+  }
+
+  const videoQualities = qualities
+    .filter((q) => !q.isAudioOnly)
+    .sort((a, b) => {
+      const aH = parseInt(a.quality) || 0;
+      const bH = parseInt(b.quality) || 0;
+      return aH - bH;
+    });
+
   return [
     ...qualities.filter((q) => q.isAudioOnly),
-    ...qualities.filter((q) => !q.isAudioOnly).sort((a, b) => parseInt(a.quality) - parseInt(b.quality)),
+    ...videoQualities,
   ];
 }
 

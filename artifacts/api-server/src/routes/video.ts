@@ -11,7 +11,7 @@ import { createReadStream } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { detectPlatform, validateUrl } from "../services/platform-detect.js";
-import { extractInfo, processQualities, resolvePlaybackUrl, spawnDownload, selfUpdate, getCurrentVersion, YTDLP, FFMPEG } from "../services/extractor.js";
+import { extractInfo, processQualities, spawnDownload, selfUpdate, getCurrentVersion, YTDLP, FFMPEG } from "../services/extractor.js";
 import { previewCache, infoCache } from "../services/metadata-cache.js";
 import { downloadQueue } from "../services/download-queue.js";
 import { getHandler } from "../handlers/index.js";
@@ -176,8 +176,8 @@ router.post("/info", async (req: Request, res: Response) => {
 });
 
 // ---- GET /play ------------------------------------------------------------
-// Range-aware video proxy for in-app playback.
-// Resolves direct URL via yt-dlp, then proxies with full range support.
+// Streams video directly via yt-dlp for in-app playback.
+// Uses combined audio+video format so the browser player works out of the box.
 
 router.get("/play", async (req: Request, res: Response) => {
   const { url } = req.query as { url?: string };
@@ -189,38 +189,46 @@ router.get("/play", async (req: Request, res: Response) => {
   console.log(`[play] url=${url}`);
   try {
     const handler = getHandler(url);
-    const sourceUrl = await resolvePlaybackUrl(url, handler.getConfig());
-    console.log(`[play] resolved → ${sourceUrl.substring(0, 80)}...`);
+    const cfg = handler.getConfig();
 
-    const rangeHeader = req.headers["range"];
-    const proxyHeaders: Record<string, string> = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      "Accept": "*/*",
-      "Accept-Encoding": "identity",
-    };
-    if (rangeHeader) proxyHeaders["Range"] = rangeHeader;
+    // Use a combined audio+video format so there's a single stream the browser can play.
+    // We prefer mp4 and cap at 720p to keep it fast.
+    const format = "best[ext=mp4][height<=720]/best[height<=720][ext=mp4]/best[ext=mp4]/best[height<=480]/best";
 
-    const upstream = await fetch(sourceUrl, { headers: proxyHeaders });
-    if (!upstream.ok && upstream.status !== 206) {
-      throw new Error(`Upstream returned ${upstream.status}`);
-    }
-
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "video/mp4");
-    res.setHeader("Accept-Ranges", upstream.headers.get("accept-ranges") ?? "bytes");
-    const len = upstream.headers.get("content-length");
-    const range = upstream.headers.get("content-range");
-    if (len) res.setHeader("Content-Length", len);
-    if (range) res.setHeader("Content-Range", range);
-    res.status(upstream.status);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Transfer-Encoding", "chunked");
 
-    if (!upstream.body) throw new Error("Empty response body from upstream.");
+    const proc = spawn(YTDLP, [
+      "--no-warnings", "--no-playlist",
+      "--no-check-certificate",
+      "--buffer-size", "16K",
+      ...cfg.extraArgs,
+      "-f", format,
+      "--merge-output-format", "mp4",
+      "-o", "-",
+      url,
+    ], { stdio: ["ignore", "pipe", "pipe"] });
 
-    const { Readable } = await import("stream");
-    const nodeStream = Readable.fromWeb(upstream.body as import("stream/web").ReadableStream);
-    req.on("close", () => { try { nodeStream.destroy(); } catch { /* ignore */ } });
-    nodeStream.pipe(res);
+    console.log(`[play] streaming format=${format}`);
+
+    proc.stderr.on("data", (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line && !line.startsWith("[debug]")) console.log("[play-yt-dlp]", line);
+    });
+
+    proc.stdout.pipe(res);
+    req.on("close", () => { try { proc.kill("SIGTERM"); } catch { /* ignore */ } });
+
+    proc.on("error", (err) => {
+      console.error("[play] spawn error:", err);
+      if (!res.headersSent) res.status(500).json({ error: "PLAY_ERROR", message: "Could not start playback." });
+    });
+
+    proc.on("close", (code) => {
+      if (code !== 0 && code !== null) console.warn(`[play] yt-dlp exited with code ${code}`);
+    });
   } catch (err) {
     console.error("[play] error:", err);
     if (!res.headersSent) {
@@ -269,11 +277,18 @@ router.get("/stream", async (req: Request, res: Response) => {
 
   const handler = getHandler(url);
   const cfg = handler.getConfig();
+
+  // Detect whether the formatId is already a full yt-dlp format selector
+  // (contains "/" or "+" or "["). If so, use it directly without wrapping.
+  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
+
   const ytdlpFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
-    : isAudioOnly
-      ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
-      : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+    : isFullSelector
+      ? formatId
+      : isAudioOnly
+        ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
+        : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
 
   console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
 
