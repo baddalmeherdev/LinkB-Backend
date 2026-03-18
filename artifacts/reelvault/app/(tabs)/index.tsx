@@ -82,6 +82,7 @@ export default function DownloadScreen() {
   const {
     fetchPreview,
     fetchVideoInfo,
+    getPlayUrl,
     getStreamUrl,
     isLoadingPreview,
     isLoadingInfo,
@@ -100,6 +101,7 @@ export default function DownloadScreen() {
   const [showCaptions, setShowCaptions] = useState(false);
   const [showHashtags, setShowHashtags] = useState(false);
   const [videoModalUrl, setVideoModalUrl] = useState<string | null>(null);
+  const [videoPlayerError, setVideoPlayerError] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -292,18 +294,14 @@ export default function DownloadScreen() {
     Alert.alert("Copied!", "Hashtags copied to clipboard.");
   };
 
-  const getYouTubeEmbedUrl = (videoUrl: string): string | null => {
-    const ytMatch = videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-    if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`;
-    return null;
-  };
-
   const handlePlay = async (videoUrl: string) => {
     if (Platform.OS === "web") {
-      const embedUrl = getYouTubeEmbedUrl(videoUrl) ?? videoUrl;
-      setVideoModalUrl(embedUrl);
+      setVideoPlayerError(false);
+      setVideoModalUrl(getPlayUrl(videoUrl));
     } else {
-      await WebBrowser.openBrowserAsync(videoUrl, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN });
+      await WebBrowser.openBrowserAsync(videoUrl, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+      });
     }
   };
 
@@ -605,17 +603,45 @@ export default function DownloadScreen() {
 
         {!previewData && !videoInfo && !isLoadingPreview && !isLoadingInfo ? (
           <Animated.View entering={FadeIn} style={styles.emptyState}>
-            <View style={styles.emptyIconWrap}>
-              <Feather name="download-cloud" size={40} color={C.textMuted} />
-            </View>
-            <Text style={styles.emptyTitle}>Paste a video URL to get started</Text>
+            <LinearGradient
+              colors={["#1A0A3E", "#0A0A1E"]}
+              style={styles.emptyIconWrap}
+            >
+              <Feather name="download-cloud" size={42} color={C.accent} />
+            </LinearGradient>
+            <Text style={styles.emptyTitle}>Download Any Video, Instantly</Text>
             <Text style={styles.emptySubtitle}>
-              YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo, Dailymotion and 1000+ platforms supported
+              Paste any video link below and download it in seconds
             </Text>
+
+            <View style={styles.featuresRow}>
+              <View style={styles.featureChip}>
+                <Feather name="zap" size={12} color={C.gold} />
+                <Text style={styles.featureChipText}>1-click Download</Text>
+              </View>
+              <View style={styles.featureChip}>
+                <Feather name="play-circle" size={12} color={C.success} />
+                <Text style={styles.featureChipText}>Preview & Play</Text>
+              </View>
+              <View style={styles.featureChip}>
+                <Feather name="globe" size={12} color={C.accent} />
+                <Text style={styles.featureChipText}>1000+ Sites</Text>
+              </View>
+            </View>
+
             <View style={styles.supportedPlatforms}>
-              {["YT", "IG", "FB", "TT", "TW", "VM"].map((p) => (
-                <View key={p} style={styles.platformPill}>
-                  <Text style={styles.platformPillText}>{p}</Text>
+              {[
+                { label: "YouTube", color: "#FF0000" },
+                { label: "Instagram", color: "#E1306C" },
+                { label: "TikTok", color: "#69C9D0" },
+                { label: "Facebook", color: "#1877F2" },
+                { label: "Twitter", color: "#1DA1F2" },
+                { label: "Vimeo", color: "#1AB7EA" },
+                { label: "+ More", color: C.textMuted },
+              ].map((p) => (
+                <View key={p.label} style={[styles.platformPill, { borderColor: p.color + "40" }]}>
+                  <View style={[styles.platformDot, { backgroundColor: p.color }]} />
+                  <Text style={[styles.platformPillText, { color: p.color }]}>{p.label}</Text>
                 </View>
               ))}
             </View>
@@ -630,27 +656,47 @@ export default function DownloadScreen() {
           visible={!!videoModalUrl}
           transparent
           animationType="fade"
-          onRequestClose={() => setVideoModalUrl(null)}
+          onRequestClose={() => { setVideoModalUrl(null); setVideoPlayerError(false); }}
         >
-          <View style={styles.videoModalOverlay}>
-            <View style={styles.videoModalContainer}>
+          <Pressable
+            style={styles.videoModalOverlay}
+            onPress={() => { setVideoModalUrl(null); setVideoPlayerError(false); }}
+          >
+            <Pressable style={styles.videoModalContainer} onPress={(e) => e.stopPropagation()}>
               <View style={styles.videoModalHeader}>
-                <Text style={styles.videoModalTitle} numberOfLines={1}>
-                  {previewData?.title ?? "Video Preview"}
-                </Text>
-                <Pressable onPress={() => setVideoModalUrl(null)} style={styles.videoModalClose}>
-                  <Feather name="x" size={20} color="#fff" />
+                <View style={styles.videoModalTitleRow}>
+                  <View style={styles.videoModalDot} />
+                  <Text style={styles.videoModalTitle} numberOfLines={1}>
+                    {previewData?.title ?? videoInfo?.title ?? "Now Playing"}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => { setVideoModalUrl(null); setVideoPlayerError(false); }}
+                  style={styles.videoModalClose}
+                >
+                  <Feather name="x" size={18} color="#fff" />
                 </Pressable>
               </View>
-              {/* @ts-ignore - web only iframe */}
-              <iframe
-                src={videoModalUrl}
-                style={{ width: "100%", height: "100%", border: "none", borderRadius: 0 }}
-                allow="autoplay; fullscreen; encrypted-media"
-                allowFullScreen
-              />
-            </View>
-          </View>
+              <View style={styles.videoPlayerWrap}>
+                {videoPlayerError ? (
+                  <View style={styles.videoErrorState}>
+                    <Feather name="alert-circle" size={36} color={C.error} />
+                    <Text style={styles.videoErrorText}>Could not load video</Text>
+                    <Text style={styles.videoErrorSub}>Try downloading it instead</Text>
+                  </View>
+                ) : (
+                  /* @ts-ignore - web only */
+                  <video
+                    src={videoModalUrl}
+                    controls
+                    autoPlay
+                    style={{ width: "100%", height: "100%", display: "block", backgroundColor: "#000" }}
+                    onError={() => setVideoPlayerError(true)}
+                  />
+                )}
+              </View>
+            </Pressable>
+          </Pressable>
         </Modal>
       ) : null}
     </View>
@@ -793,48 +839,82 @@ const styles = StyleSheet.create({
   cleanBannerText: { color: C.success, fontSize: 12, fontFamily: "Inter_500Medium" },
   qualitiesSection: { gap: 10 },
   qualitiesList: { gap: 8 },
-  emptyState: { alignItems: "center", paddingTop: 60, gap: 12 },
+  emptyState: { alignItems: "center", paddingTop: 40, paddingHorizontal: 4, gap: 12 },
   emptyIconWrap: {
-    width: 80, height: 80, borderRadius: 20,
-    backgroundColor: C.surfaceElevated, alignItems: "center", justifyContent: "center",
-    marginBottom: 4, borderWidth: 1, borderColor: C.surfaceBorder,
+    width: 88, height: 88, borderRadius: 22,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: 4, borderWidth: 1, borderColor: C.accent + "30",
   },
-  emptyTitle: { color: C.text, fontSize: 18, fontFamily: "Inter_600SemiBold" },
+  emptyTitle: { color: C.text, fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center" },
   emptySubtitle: {
     color: C.textSecondary, fontSize: 14, fontFamily: "Inter_400Regular",
-    textAlign: "center", lineHeight: 22, maxWidth: 280,
+    textAlign: "center", lineHeight: 22, maxWidth: 300,
   },
-  supportedPlatforms: {
-    flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap", justifyContent: "center",
+  featuresRow: {
+    flexDirection: "row", gap: 8, marginTop: 4, flexWrap: "wrap", justifyContent: "center",
   },
-  platformPill: {
-    backgroundColor: C.surfaceElevated, paddingHorizontal: 12, paddingVertical: 5,
+  featureChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: C.surfaceElevated, paddingHorizontal: 10, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.5 },
+  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium" },
+  supportedPlatforms: {
+    flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap", justifyContent: "center",
+  },
+  platformPill: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: C.surfaceElevated, paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
+  },
+  platformDot: { width: 6, height: 6, borderRadius: 3 },
+  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold" },
   videoModalOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    flex: 1, backgroundColor: "rgba(0,0,0,0.88)",
     alignItems: "center", justifyContent: "center",
+    padding: 16,
   },
   videoModalContainer: {
-    width: "92%", maxWidth: 800,
-    height: 480, backgroundColor: "#000",
-    borderRadius: 16, overflow: "hidden",
-    borderWidth: 1, borderColor: C.surfaceBorder,
+    width: "100%", maxWidth: 860,
+    backgroundColor: "#0A0A14",
+    borderRadius: 20, overflow: "hidden",
+    borderWidth: 1, borderColor: C.accent + "30",
   },
   videoModalHeader: {
     flexDirection: "row", alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: C.surfaceElevated,
-    paddingHorizontal: 16, paddingVertical: 12,
+    paddingHorizontal: 16, paddingVertical: 13,
+    borderBottomWidth: 1, borderBottomColor: C.surfaceBorder,
+  },
+  videoModalTitleRow: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 8, marginRight: 12,
+  },
+  videoModalDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: C.error,
   },
   videoModalTitle: {
-    flex: 1, color: C.text, fontSize: 14,
-    fontFamily: "Inter_600SemiBold", marginRight: 12,
+    flex: 1, color: C.text, fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
   },
   videoModalClose: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
+  },
+  videoPlayerWrap: {
+    aspectRatio: 16 / 9, backgroundColor: "#000",
+    width: "100%",
+  },
+  videoErrorState: {
+    flex: 1, alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: "#0A0A14", padding: 32,
+  },
+  videoErrorText: {
+    color: C.text, fontSize: 16, fontFamily: "Inter_600SemiBold",
+  },
+  videoErrorSub: {
+    color: C.textMuted, fontSize: 13, fontFamily: "Inter_400Regular",
   },
 });

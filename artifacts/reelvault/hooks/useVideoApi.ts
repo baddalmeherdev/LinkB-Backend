@@ -57,6 +57,11 @@ export function useVideoApi() {
     }
   };
 
+  const getPlayUrl = (videoUrl: string): string => {
+    const params = new URLSearchParams({ url: videoUrl });
+    return `${BASE_URL}/api/video/play?${params.toString()}`;
+  };
+
   const getStreamUrl = (
     videoUrl: string,
     quality: VideoQuality,
@@ -78,6 +83,7 @@ export function useVideoApi() {
   return {
     fetchPreview,
     fetchVideoInfo,
+    getPlayUrl,
     getStreamUrl,
     isLoadingPreview,
     isLoadingInfo,

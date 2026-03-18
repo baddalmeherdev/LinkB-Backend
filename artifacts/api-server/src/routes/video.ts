@@ -269,6 +269,45 @@ router.post("/info", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/play", (req: Request, res: Response) => {
+  const { url } = req.query as { url?: string };
+  if (!url || !validateUrl(url)) {
+    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "video/mp4");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  const args = [
+    "--no-warnings",
+    "--no-playlist",
+    "-f", "best[ext=mp4][height<=480]/bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[height<=480]/best",
+    "-o", "-",
+    url,
+  ];
+
+  console.log(`[play] Streaming: ${url}`);
+  const proc = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+  proc.stderr.on("data", (d: Buffer) => {
+    const line = d.toString().trim();
+    if (line) console.log("[yt-dlp play]", line);
+  });
+
+  proc.stdout.pipe(res);
+
+  req.on("close", () => proc.kill("SIGTERM"));
+
+  proc.on("error", (err) => {
+    console.error("[play] spawn error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "PLAY_ERROR", message: "Could not stream video." });
+    }
+  });
+});
+
 router.get("/stream", async (req: Request, res: Response) => {
   const { url, formatId, quality, isPremium, title } = req.query as {
     url?: string;
