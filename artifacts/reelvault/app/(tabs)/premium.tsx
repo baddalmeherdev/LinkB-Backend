@@ -1,7 +1,7 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Alert,
   Linking,
@@ -102,7 +102,11 @@ function isValidUTR(utr: string): boolean {
 
 export default function PremiumScreen() {
   const insets = useSafeAreaInsets();
-  const { isPremium, unlockPremium } = useApp();
+  const { isPremium, premiumExpiry, unlockPremium } = useApp();
+  const expiryDateStr = useMemo(() => {
+    if (!premiumExpiry) return null;
+    return new Date(premiumExpiry).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+  }, [premiumExpiry]);
   const [paymentStep, setPaymentStep] = useState(false);
   const [utr, setUtr] = useState("");
   const [utrError, setUtrError] = useState("");
@@ -111,7 +115,7 @@ export default function PremiumScreen() {
 
   const handlePayViaUPI = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkB+Downloader&am=99&cu=INR&tn=LinkB+Downloader+Premium`;
+    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkB+Downloader&am=29&cu=INR&tn=LinkB+Downloader+Premium`;
     try {
       const canOpen = await Linking.canOpenURL(upiUrl);
       if (canOpen) {
@@ -119,7 +123,7 @@ export default function PremiumScreen() {
       } else {
         Alert.alert(
           "No UPI App Found",
-          `Please send ₹99 manually:\n\nUPI ID: ${UPI_ID}\n\nEnter the UTR number after payment.`
+          `Please send ₹29 manually:\n\nUPI ID: ${UPI_ID}\n\nEnter the UTR number after payment.`
         );
       }
     } catch {}
@@ -143,7 +147,7 @@ export default function PremiumScreen() {
     setUtr("");
     Alert.alert(
       "Premium Active!",
-      `UTR: ${cleaned}\n\nThank you! Your Premium is now unlocked. All features are available.`
+      `UTR: ${cleaned}\n\nThank you! Your Premium is now active for 1 month. Renewal required after expiry.`
     );
   };
 
@@ -170,6 +174,12 @@ export default function PremiumScreen() {
           <Text style={styles.activeSubtitle}>
             Thank you! Your Premium is active. All features are now unlocked.
           </Text>
+          {expiryDateStr && (
+            <View style={styles.expiryBadge}>
+              <Feather name="calendar" size={13} color="#F59E0B" />
+              <Text style={styles.expiryText}>Expires on {expiryDateStr}</Text>
+            </View>
+          )}
           <View style={styles.activePerks}>
             {FEATURES.map((f, i) => (
               <View key={i} style={styles.activePerkRow}>
@@ -230,7 +240,7 @@ export default function PremiumScreen() {
               <View>
                 <Text style={styles.upiReminderTitle}>Payment ID</Text>
                 <Text style={styles.upiReminderValue}>{UPI_ID}</Text>
-                <Text style={styles.upiReminderAmount}>₹99 · One-time</Text>
+                <Text style={styles.upiReminderAmount}>₹29 · Per month</Text>
               </View>
             </View>
             <Pressable
@@ -357,8 +367,8 @@ export default function PremiumScreen() {
           <Text style={styles.heroTitle}>LinkB Downloader Premium</Text>
           <Text style={styles.heroSubtitle}>Unlock the full experience</Text>
           <View style={styles.priceTag}>
-            <Text style={styles.priceAmount}>₹99</Text>
-            <Text style={styles.pricePeriod}>  lifetime access</Text>
+            <Text style={styles.priceAmount}>₹29</Text>
+            <Text style={styles.pricePeriod}>  /month</Text>
           </View>
         </View>
 
@@ -368,7 +378,7 @@ export default function PremiumScreen() {
               <Text style={styles.stepBadgeText}>1</Text>
             </View>
             <Text style={styles.stepCardTitle}>Pay via UPI</Text>
-            <Text style={styles.stepCardDesc}>Send ₹99 to the UPI ID</Text>
+            <Text style={styles.stepCardDesc}>Send ₹29 to the UPI ID</Text>
           </View>
           <Feather name="arrow-right" size={18} color={C.textMuted} />
           <View style={styles.stepCard}>
@@ -429,7 +439,7 @@ export default function PremiumScreen() {
               <Text style={styles.upiInfoId}>{UPI_ID}</Text>
             </View>
             <View style={styles.amountBadge}>
-              <Text style={styles.upiInfoAmount}>₹99</Text>
+              <Text style={styles.upiInfoAmount}>₹29</Text>
             </View>
           </View>
           <Pressable
@@ -437,7 +447,7 @@ export default function PremiumScreen() {
             onPress={handlePayViaUPI}
           >
             <MaterialCommunityIcons name="contactless-payment" size={20} color="#000" />
-            <Text style={styles.payBtnText}>Pay ₹99 via UPI</Text>
+            <Text style={styles.payBtnText}>Pay ₹29/month via UPI</Text>
           </Pressable>
           <Text style={styles.disclaimer}>
             Enter UTR number after payment → Premium unlocks instantly
@@ -788,6 +798,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
     marginBottom: 8,
+  },
+  expiryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#2A1A00",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#4A3000",
+  },
+  expiryText: {
+    color: "#F59E0B",
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
   },
   activePerks: {
     width: "100%",

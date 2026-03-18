@@ -49,7 +49,7 @@ export function PremiumModal({ visible, onClose }: Props) {
 
   const handlePayViaUPI = async () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkB+Downloader&am=99&cu=INR&tn=LinkB+Downloader+Premium`;
+    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=LinkB+Downloader&am=29&cu=INR&tn=LinkB+Downloader+Premium`;
     try {
       const canOpen = await Linking.canOpenURL(upiUrl);
       if (canOpen) {
@@ -57,7 +57,7 @@ export function PremiumModal({ visible, onClose }: Props) {
       } else {
         Alert.alert(
           "UPI App Not Found",
-          `Manually pay ₹99 to:\n\nUPI ID: ${UPI_ID}\n\nEnter the UTR number below after payment.`
+          `Manually pay ₹29 to:\n\nUPI ID: ${UPI_ID}\n\nEnter the UTR number below after payment.`
         );
       }
     } catch {}
@@ -82,7 +82,7 @@ export function PremiumModal({ visible, onClose }: Props) {
     onClose();
     Alert.alert(
       "Premium Activated!",
-      `UTR: ${cleaned}\n\nThank you! Your Premium is now unlocked. All features are available.`
+      `UTR: ${cleaned}\n\nThank you! Your Premium is now active for 1 month. Renewal required after expiry.`
     );
   };
 
@@ -115,8 +115,8 @@ export function PremiumModal({ visible, onClose }: Props) {
               <Text style={styles.subtitle}>Unlock the full experience</Text>
 
               <View style={styles.priceRow}>
-                <Text style={styles.price}>₹99</Text>
-                <Text style={styles.pricePeriod}> / lifetime</Text>
+                <Text style={styles.price}>₹29</Text>
+                <Text style={styles.pricePeriod}> / month</Text>
               </View>
 
               <View style={styles.perks}>
@@ -140,7 +140,7 @@ export function PremiumModal({ visible, onClose }: Props) {
                 onPress={handlePayViaUPI}
               >
                 <MaterialCommunityIcons name="contactless-payment" size={20} color="#000" />
-                <Text style={styles.payBtnText}>Pay ₹99 via UPI</Text>
+                <Text style={styles.payBtnText}>Pay ₹29/month via UPI</Text>
               </Pressable>
 
               <Text style={styles.upiNote}>UPI ID: {UPI_ID}</Text>
@@ -174,7 +174,7 @@ export function PremiumModal({ visible, onClose }: Props) {
                 <MaterialCommunityIcons name="contactless-payment" size={18} color={C.accent} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.upiReminderLabel}>Payment UPI ID</Text>
-                  <Text style={styles.upiReminderValue}>{UPI_ID} · ₹99</Text>
+                  <Text style={styles.upiReminderValue}>{UPI_ID} · ₹29/month</Text>
                 </View>
                 <Pressable onPress={handlePayViaUPI}>
                   <Text style={styles.payAgainLink}>Pay Again</Text>

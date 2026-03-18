@@ -43,6 +43,7 @@ export type DownloadHistoryItem = {
 
 type AppContextType = {
   isPremium: boolean;
+  premiumExpiry: number | null;
   unlockPremium: () => void;
   history: DownloadHistoryItem[];
   addToHistory: (item: Omit<DownloadHistoryItem, "id" | "downloadedAt">) => void;
@@ -52,21 +53,38 @@ type AppContextType = {
 
 const AppContext = createContext<AppContextType | null>(null);
 
-const PREMIUM_KEY = "@reelvault:premium";
+const PREMIUM_EXPIRY_KEY = "@reelvault:premium_expiry";
 const HISTORY_KEY = "@reelvault:history";
+
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isPremium, setIsPremium] = useState(false);
+  const [premiumExpiry, setPremiumExpiry] = useState<number | null>(null);
   const [history, setHistory] = useState<DownloadHistoryItem[]>([]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [premiumRaw, historyRaw] = await Promise.all([
-          AsyncStorage.getItem(PREMIUM_KEY),
+        const [expiryRaw, historyRaw] = await Promise.all([
+          AsyncStorage.getItem(PREMIUM_EXPIRY_KEY),
           AsyncStorage.getItem(HISTORY_KEY),
         ]);
-        if (premiumRaw === "true") setIsPremium(true);
+
+        if (expiryRaw) {
+          const expiry = parseInt(expiryRaw, 10);
+          if (!isNaN(expiry)) {
+            if (Date.now() < expiry) {
+              setIsPremium(true);
+              setPremiumExpiry(expiry);
+            } else {
+              await AsyncStorage.removeItem(PREMIUM_EXPIRY_KEY);
+              setIsPremium(false);
+              setPremiumExpiry(null);
+            }
+          }
+        }
+
         if (historyRaw) setHistory(JSON.parse(historyRaw) as DownloadHistoryItem[]);
       } catch {
       }
@@ -75,8 +93,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const unlockPremium = useCallback(async () => {
+    const expiry = Date.now() + ONE_MONTH_MS;
     setIsPremium(true);
-    await AsyncStorage.setItem(PREMIUM_KEY, "true");
+    setPremiumExpiry(expiry);
+    await AsyncStorage.setItem(PREMIUM_EXPIRY_KEY, expiry.toString());
   }, []);
 
   const addToHistory = useCallback(
@@ -110,7 +130,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppContext.Provider
-      value={{ isPremium, unlockPremium, history, addToHistory, clearHistory, removeFromHistory }}
+      value={{ isPremium, premiumExpiry, unlockPremium, history, addToHistory, clearHistory, removeFromHistory }}
     >
       {children}
     </AppContext.Provider>
