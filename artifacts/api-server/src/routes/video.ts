@@ -1,12 +1,11 @@
 // Video Routes
 // All video-related API endpoints.
 // Extraction, preview, quality listing, playback, and download are all handled here.
-// The actual heavy lifting is done by services/ and handlers/.
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { spawn } from "child_process";
 import { detectPlatform, validateUrl } from "../services/platform-detect.js";
-import { extractInfo, extractInfoRobust, processQualities, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
+import { extractInfoRobust, processQualities, selfUpdate, getCurrentVersion, YTDLP } from "../services/extractor.js";
 import { previewCache, infoCache } from "../services/metadata-cache.js";
 import { getHandler } from "../handlers/index.js";
 
@@ -36,14 +35,12 @@ function getClientIp(req: Request): string {
   return req.socket.remoteAddress ?? "unknown";
 }
 
-// ---- Helper ---------------------------------------------------------------
+// ---- Error classification -------------------------------------------------
 
 function classifyError(msg: string): { status: number; code: string; message: string } {
   const m = msg.toLowerCase();
   if (m.includes("unsupported url") || m.includes("no such extractor"))
-    return { status: 400, code: "UNSUPPORTED_URL", message: "This link is not supported. Try a different URL from a supported platform." };
-  // Use precise phrases so "Requested format is not available" doesn't falsely
-  // trigger the private-video message.
+    return { status: 400, code: "UNSUPPORTED_URL", message: "This link is not supported. Try a URL from YouTube, TikTok, Instagram, or any of the 2000+ supported platforms." };
   if (
     m.includes("video is private") ||
     m.includes("this video is unavailable") ||
@@ -51,28 +48,23 @@ function classifyError(msg: string): { status: number; code: string; message: st
     m.includes("this video has been removed") ||
     m.includes("account has been terminated")
   )
-    return { status: 400, code: "PRIVATE_VIDEO", message: "This video is private or unavailable." };
+    return { status: 400, code: "PRIVATE_VIDEO", message: "This video is private or has been removed." };
   if (m.includes("geo") || m.includes("not available in your country"))
     return { status: 400, code: "GEO_BLOCKED", message: "This video is geo-restricted and cannot be accessed from this server." };
   if (m.includes("requested format is not available") || m.includes("format is not available"))
-    return { status: 400, code: "FORMAT_UNAVAILABLE", message: "Could not fetch this video. Please try a different link or try again later." };
+    return { status: 400, code: "FORMAT_UNAVAILABLE", message: "This video's format is not available. Please try a different link." };
+  if (m.includes("login") || m.includes("sign in") || m.includes("cookie"))
+    return { status: 400, code: "AUTH_REQUIRED", message: "This video requires a login to access. Only public videos can be downloaded." };
   if (m.includes("enoent") || m.includes("yt-dlp"))
-    return { status: 503, code: "SERVICE_UNAVAILABLE", message: "Downloader service is temporarily unavailable." };
+    return { status: 503, code: "SERVICE_UNAVAILABLE", message: "Downloader service is temporarily unavailable. Please try again in a moment." };
   return { status: 500, code: "EXTRACTION_FAILED", message: "Could not fetch video info. Please check the link and try again." };
 }
 
-// ---- Keep-alive heartbeat helper ------------------------------------------
+// ---- Keep-alive heartbeat -------------------------------------------------
 // yt-dlp can take 10-45 seconds on slow connections. Without any bytes flowing,
-// the Replit proxy (and some clients) will abort the connection at ~6 seconds.
-// This helper solves that by flushing a JSON-legal whitespace byte every 2 s
-// while the async work runs, keeping the connection alive.
-//
-// CONTRACT:
-//  - After HEARTBEAT_DELAY_MS the response is committed to HTTP 200 + chunked.
-//  - On success the result JSON is streamed as the final chunk.
-//  - On error the error JSON is streamed (callers must check body for .error).
-//  - Before HEARTBEAT_DELAY_MS, nothing is written — caller keeps full control
-//    of status codes (returns usedHeartbeat=false).
+// the proxy will close the connection at ~6 s. We flush a whitespace byte every
+// 2 s to keep it alive. Once committed to 200+chunked, errors are embedded in
+// the JSON body — callers must check body.error, not just res.ok.
 
 const HEARTBEAT_DELAY_MS = 3_000;
 const HEARTBEAT_INTERVAL_MS = 2_000;
@@ -87,10 +79,9 @@ async function withHeartbeat<T>(
   const startHeartbeat = () => {
     if (usedHeartbeat || res.writableEnded) return;
     usedHeartbeat = true;
-    // Commit headers now — status code is locked to 200 from this point.
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Transfer-Encoding", "chunked");
-    res.setHeader("X-Accel-Buffering", "no"); // Prevent nginx/proxy buffering
+    res.setHeader("X-Accel-Buffering", "no");
     res.status(200);
     heartbeatInterval = setInterval(() => {
       try { if (!res.writableEnded) res.write(" "); } catch { /* ignore */ }
@@ -112,7 +103,6 @@ async function withHeartbeat<T>(
   }
 }
 
-// Finish a heartbeat-wrapped response: stream result or error JSON.
 function endHeartbeat(res: Response, usedHeartbeat: boolean, data: object, status = 200): void {
   if (res.writableEnded) return;
   if (usedHeartbeat) {
@@ -122,16 +112,14 @@ function endHeartbeat(res: Response, usedHeartbeat: boolean, data: object, statu
   }
 }
 
-
 // ---- POST /preview --------------------------------------------------------
-// Quick metadata fetch: title, thumbnail, duration.
-// Results are cached for 5 minutes.
-// Uses keep-alive heartbeat to prevent proxy timeouts on slow yt-dlp runs.
+// Quick metadata fetch: title, thumbnail, duration, platform.
+// Cached for 5 minutes. Uses robust 3-strategy fallback extractor.
 
 router.post("/preview", async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   if (!checkRateLimit(ip)) {
-    res.status(429).json({ error: "RATE_LIMIT", message: "Too many requests. Please wait a minute." });
+    res.status(429).json({ error: "RATE_LIMIT", message: "Too many requests. Please wait a moment." });
     return;
   }
 
@@ -141,11 +129,10 @@ router.post("/preview", async (req: Request, res: Response) => {
     return;
   }
   if (!validateUrl(url)) {
-    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS URL." });
+    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS link." });
     return;
   }
 
-  // Cache hit — respond immediately, no heartbeat needed.
   const cached = previewCache.get<object>(url);
   if (cached) { res.json(cached); return; }
 
@@ -155,7 +142,7 @@ router.post("/preview", async (req: Request, res: Response) => {
   const { result, errInfo, usedHeartbeat } = await withHeartbeat(
     res,
     (async () => {
-      const info = await extractInfo(url, handler.getConfig());
+      const { info } = await extractInfoRobust(url, handler.getConfig());
       return {
         title: info.title,
         thumbnail: info.thumbnail,
@@ -177,14 +164,13 @@ router.post("/preview", async (req: Request, res: Response) => {
 });
 
 // ---- POST /info -----------------------------------------------------------
-// Full format listing with quality options.
-// Results are cached for 3 minutes.
-// Uses keep-alive heartbeat to prevent proxy timeouts on slow yt-dlp runs.
+// Full metadata + format listing. Cached for 3 minutes.
+// Uses robust 3-strategy fallback extractor.
 
 router.post("/info", async (req: Request, res: Response) => {
   const ip = getClientIp(req);
   if (!checkRateLimit(ip)) {
-    res.status(429).json({ error: "RATE_LIMIT", message: "Too many requests. Please wait a minute." });
+    res.status(429).json({ error: "RATE_LIMIT", message: "Too many requests. Please wait a moment." });
     return;
   }
 
@@ -194,11 +180,10 @@ router.post("/info", async (req: Request, res: Response) => {
     return;
   }
   if (!validateUrl(url)) {
-    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS URL." });
+    res.status(400).json({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS link." });
     return;
   }
 
-  // Cache hit — respond immediately, no heartbeat needed.
   const cached = infoCache.get<object>(url);
   if (cached) { res.json(cached); return; }
 
@@ -208,7 +193,8 @@ router.post("/info", async (req: Request, res: Response) => {
   const { result, errInfo, usedHeartbeat } = await withHeartbeat(
     res,
     (async () => {
-      const info = await extractInfo(url, handler.getConfig());
+      const { info, strategy, retries } = await extractInfoRobust(url, handler.getConfig());
+      if (retries > 0) console.log(`[info] recovered via strategy=${strategy} retries=${retries}`);
       const qualities = processQualities(info);
       return {
         title: info.title,
@@ -233,8 +219,7 @@ router.post("/info", async (req: Request, res: Response) => {
 });
 
 // ---- GET /play ------------------------------------------------------------
-// Streams video directly via yt-dlp for in-app playback.
-// Uses combined audio+video format so the browser player works out of the box.
+// Streams video for in-app playback (pre-muxed stream, piped directly).
 
 router.get("/play", async (req: Request, res: Response) => {
   const { url } = req.query as { url?: string };
@@ -248,18 +233,12 @@ router.get("/play", async (req: Request, res: Response) => {
     const handler = getHandler(url);
     const cfg = handler.getConfig();
 
-    // We MUST pick a pre-muxed format (acodec!=none AND vcodec!=none in a
-    // single stream). When piping to stdout (-o -) yt-dlp cannot do mp4
-    // muxing because mp4 atoms need seekable output. Selecting a pre-muxed
-    // stream avoids muxing entirely and the bytes can be piped as-is.
-    // Format 18 = YouTube 360p pre-muxed mp4, 22 = 720p pre-muxed mp4.
-    // For Instagram/TikTok they always serve pre-muxed mp4 so any selector works.
     const format = [
       "best[acodec!=none][vcodec!=none][height<=480][ext=mp4]",
       "best[acodec!=none][vcodec!=none][ext=mp4]",
       "best[acodec!=none][vcodec!=none][height<=480]",
       "best[acodec!=none][vcodec!=none]",
-      "18", // YouTube 360p pre-muxed fallback
+      "18",
       "best[height<=360]",
       "worst",
     ].join("/");
@@ -275,11 +254,9 @@ router.get("/play", async (req: Request, res: Response) => {
       "--buffer-size", "16K",
       ...cfg.extraArgs,
       "-f", format,
-      "-o", "-",           // stdout; no --merge-output-format needed for pre-muxed
+      "-o", "-",
       url,
     ], { stdio: ["ignore", "pipe", "pipe"] });
-
-    console.log(`[play] streaming format=${format}`);
 
     proc.stderr.on("data", (d: Buffer) => {
       const line = d.toString().trim();
@@ -295,7 +272,7 @@ router.get("/play", async (req: Request, res: Response) => {
     });
 
     proc.on("close", (code) => {
-      if (code !== 0 && code !== null) console.warn(`[play] yt-dlp exited with code ${code}`);
+      if (code !== 0 && code !== null) console.warn(`[play] yt-dlp exited ${code}`);
     });
   } catch (err) {
     console.error("[play] error:", err);
@@ -306,18 +283,13 @@ router.get("/play", async (req: Request, res: Response) => {
 });
 
 // ---- GET /stream ----------------------------------------------------------
-// Final download endpoint.
-// All tiers stream directly — no temp files, no watermark re-encode.
-// The only difference: free users are capped at 720p, premium users get full
-// quality up to 4K. Streaming starts immediately for all users.
+// Final download endpoint. Streams directly — no temp files.
+// Free users are capped at 720p; premium users get full quality.
 
 router.get("/stream", async (req: Request, res: Response) => {
   const { url, formatId, quality, isPremium, title } = req.query as {
-    url?: string;
-    formatId?: string;
-    quality?: string;
-    isPremium?: string;
-    title?: string;
+    url?: string; formatId?: string; quality?: string;
+    isPremium?: string; title?: string;
   };
 
   if (!url || !formatId) {
@@ -347,10 +319,7 @@ router.get("/stream", async (req: Request, res: Response) => {
   const handler = getHandler(url);
   const cfg = handler.getConfig();
 
-  // Detect whether the formatId is already a full yt-dlp format selector
-  // (contains "/" or "+" or "["). If so, use it directly without wrapping.
   const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
-
   const ytdlpFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
     : isFullSelector
@@ -360,13 +329,11 @@ router.get("/stream", async (req: Request, res: Response) => {
         : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
 
   console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
-
-  // Direct streaming for all users — no temp files, starts immediately.
   streamDirect({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs });
 });
 
 // ---- GET /update ----------------------------------------------------------
-// Triggers a yt-dlp self-update. Call this to keep extraction support current.
+// Triggers yt-dlp self-update. Run periodically to keep extractors current.
 
 router.get("/update", async (_req: Request, res: Response) => {
   try {
@@ -382,7 +349,7 @@ router.get("/update", async (_req: Request, res: Response) => {
 });
 
 // ---- GET /status ----------------------------------------------------------
-// Returns server health and yt-dlp version info.
+// Server health + yt-dlp version info.
 
 router.get("/status", async (_req: Request, res: Response) => {
   try {
@@ -398,22 +365,15 @@ router.get("/status", async (_req: Request, res: Response) => {
   }
 });
 
-// ---- Streaming helpers ----------------------------------------------------
+// ---- Streaming helper -----------------------------------------------------
 
 function streamDirect(opts: {
-  req: Request;
-  res: Response;
-  url: string;
-  format: string;
-  ext: string;
-  extraArgs: string[];
+  req: Request; res: Response; url: string;
+  format: string; ext: string; extraArgs: string[];
 }): void {
   const { req, res, url, format, ext, extraArgs } = opts;
   res.setHeader("Transfer-Encoding", "chunked");
 
-  // For video mp4: use fragmented mp4 (fMP4) output so that ffmpeg can mux
-  // audio+video to a non-seekable stdout pipe. Regular mp4 needs moov atom at
-  // start which requires seeking; fMP4 with empty_moov is fully streamable.
   const mergeFormat = ext === "mp4" ? "mp4" : ext;
   const ffmpegMovFlags = ext === "mp4"
     ? ["--postprocessor-args", "ffmpeg:-movflags frag_keyframes+empty_moov+default_base_moof"]
@@ -448,201 +408,8 @@ function streamDirect(opts: {
   });
 
   proc.on("close", (code) => {
-    if (code !== 0 && code !== null) console.warn(`[stream-direct] yt-dlp exited with code ${code}`);
+    if (code !== 0 && code !== null) console.warn(`[stream-direct] yt-dlp exited ${code}`);
   });
 }
-
-// ---- POST /test -----------------------------------------------------------
-// Internal test engine. Tests URLs one at a time using extractInfoRobust
-// (3-strategy fallback chain). Returns structured results with timing, retry
-// info, and per-step failure attribution.
-
-interface TestResult {
-  url: string;
-  category: string;
-  status: "pass" | "fail" | "unsupported" | "invalid";
-  // Which step failed: "metadata" | "formats" | null (null = passed or invalid)
-  failedStep: "metadata" | "formats" | null;
-  errorCode: string | null;
-  errorMessage: string | null;
-  strategyUsed: string | null;
-  title: string | null;
-  thumbnail: string | null;
-  hasDuration: boolean;
-  formatsAvailable: number;
-  downloadable: boolean;
-  retryAttempts: number;
-  metadataMs: number;
-  formatMs: number;
-  totalMs: number;
-}
-
-router.post("/test", async (req: Request, res: Response) => {
-  const { urls, autoUpdate } = req.body as {
-    urls?: Array<{ url: string; category: string }>;
-    autoUpdate?: boolean;
-  };
-
-  if (!urls || !Array.isArray(urls)) {
-    res.status(400).json({ error: "INVALID_REQUEST", message: "urls array is required." });
-    return;
-  }
-
-  const results: TestResult[] = [];
-  const logs: string[] = [];
-  const startAll = Date.now();
-  let ytdlpVersion = "unknown";
-
-  // Optional: self-update yt-dlp before running the suite
-  if (autoUpdate) {
-    try {
-      logs.push("[update] Running yt-dlp -U...");
-      const updateOut = await selfUpdate();
-      ytdlpVersion = await getCurrentVersion();
-      logs.push(`[update] Done — ${ytdlpVersion}. Output: ${updateOut.slice(0, 120)}`);
-    } catch (e) {
-      logs.push(`[update] Warning: self-update failed — ${e instanceof Error ? e.message.slice(0, 80) : e}`);
-    }
-  }
-
-  // Always log current version
-  try {
-    ytdlpVersion = await getCurrentVersion();
-    logs.push(`[info] yt-dlp version: ${ytdlpVersion}`);
-  } catch { /* ignore */ }
-
-  for (const item of urls.slice(0, 20)) {
-    const { url, category } = item;
-    const t0 = Date.now();
-    const result: TestResult = {
-      url,
-      category,
-      status: "fail",
-      failedStep: "metadata",
-      errorCode: null,
-      errorMessage: null,
-      strategyUsed: null,
-      title: null,
-      thumbnail: null,
-      hasDuration: false,
-      formatsAvailable: 0,
-      downloadable: false,
-      retryAttempts: 0,
-      metadataMs: 0,
-      formatMs: 0,
-      totalMs: 0,
-    };
-
-    // --- Step 1: validate URL
-    if (!validateUrl(url)) {
-      result.status = "invalid";
-      result.failedStep = null;
-      result.errorCode = "INVALID_URL";
-      result.errorMessage = "Not a valid HTTP/HTTPS URL.";
-      result.totalMs = Date.now() - t0;
-      logs.push(`[${category}] INVALID ${url}`);
-      results.push(result);
-      continue;
-    }
-
-    // --- Step 2: fetch metadata using robust 3-strategy fallback
-    const metaStart = Date.now();
-    let info: import("../services/extractor.js").ExtractedInfo | null = null;
-
-    try {
-      const handler = getHandler(url);
-      logs.push(`[${category}] Testing ${url} (handler: ${handler.name})`);
-      const robust = await extractInfoRobust(url, handler.getConfig());
-      info = robust.info;
-      result.retryAttempts = robust.retries;
-      result.strategyUsed = robust.strategy;
-      if (robust.retries > 0) {
-        logs.push(`[${category}] Recovered after ${robust.retries} retry/retries using strategy: ${robust.strategy}`);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const classified = classifyError(msg);
-      result.status = classified.code === "UNSUPPORTED_URL" ? "unsupported" : "fail";
-      result.failedStep = "metadata";
-      result.errorCode = classified.code;
-      result.errorMessage = classified.message;
-      result.metadataMs = Date.now() - metaStart;
-      result.totalMs = Date.now() - t0;
-      logs.push(`[${category}] FAIL metadata ${url} => ${classified.code}`);
-      results.push(result);
-      continue;
-    }
-
-    result.metadataMs = Date.now() - metaStart;
-    result.title = info.title;
-    result.thumbnail = info.thumbnail;
-    result.hasDuration = info.duration != null && info.duration > 0;
-
-    // --- Step 3: check formats/download availability
-    const fmtStart = Date.now();
-    let downloadable = false;
-
-    try {
-      const qualities = processQualities(info);
-      const videoQualities = qualities.filter((q) => !q.isAudioOnly);
-      result.formatsAvailable = videoQualities.length;
-
-      // Pass if any non-empty formatId exists
-      downloadable = videoQualities.some((q) => q.formatId.length > 0);
-
-      // Direct-URL sites (no formats array) are inherently downloadable
-      if (!downloadable && info.formats.length === 0 && info.originalUrl) {
-        downloadable = true;
-      }
-    } catch {
-      downloadable = false;
-    }
-
-    result.formatMs = Date.now() - fmtStart;
-    result.downloadable = downloadable;
-    result.totalMs = Date.now() - t0;
-
-    if (result.title && result.downloadable) {
-      result.status = "pass";
-      result.failedStep = null;
-      logs.push(`[${category}] PASS ${url} — "${result.title}" (${result.formatsAvailable} formats, ${result.totalMs}ms)`);
-    } else if (result.title) {
-      result.status = "fail";
-      result.failedStep = "formats";
-      result.errorCode = "NO_FORMATS";
-      result.errorMessage = "Metadata loaded but no downloadable formats found. May be geo-restricted or DRM-protected.";
-      logs.push(`[${category}] FAIL formats ${url} — "${result.title}"`);
-    } else {
-      result.status = "fail";
-      result.failedStep = "metadata";
-      result.errorCode = "NO_METADATA";
-      result.errorMessage = "Video info retrieved but title was missing — unexpected server response.";
-      logs.push(`[${category}] FAIL no-title ${url}`);
-    }
-
-    results.push(result);
-  }
-
-  const totalMs = Date.now() - startAll;
-  const passed = results.filter((r) => r.status === "pass").length;
-  const failed = results.filter((r) => r.status === "fail").length;
-  const unsupported = results.filter((r) => r.status === "unsupported").length;
-  const invalid = results.filter((r) => r.status === "invalid").length;
-
-  res.json({
-    summary: {
-      total: results.length,
-      passed,
-      failed,
-      unsupported,
-      invalid,
-      successRate: results.length > 0 ? Math.round((passed / results.length) * 100) : 0,
-      totalMs,
-    },
-    ytdlpVersion,
-    results,
-    logs,
-  });
-});
 
 export default router;

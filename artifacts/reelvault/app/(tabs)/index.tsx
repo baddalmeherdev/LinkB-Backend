@@ -229,6 +229,14 @@ export default function DownloadScreen() {
     setDownloadPhase("");
   };
 
+  // Auto-dismiss "done" banner after 2.5 seconds
+  useEffect(() => {
+    if (downloadPhase === "done") {
+      const t = setTimeout(() => setDownloadPhase(""), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [downloadPhase]);
+
   const handleDownload = async (quality: VideoQuality) => {
     if (!videoInfo) return;
 
@@ -853,6 +861,46 @@ export default function DownloadScreen() {
       </ScrollView>
 
       <PremiumModal visible={showPremiumModal} onClose={() => setShowPremiumModal(false)} />
+
+      {/* Download Progress Overlay */}
+      {isDownloading || downloadPhase === "done" ? (
+        <Animated.View entering={FadeIn} style={styles.downloadOverlay}>
+          <View style={styles.downloadOverlayContent}>
+            <View style={styles.downloadOverlayLeft}>
+              {downloadPhase === "done" ? (
+                <View style={styles.downloadDoneIcon}>
+                  <Feather name="check-circle" size={20} color={C.success} />
+                </View>
+              ) : (
+                <ActivityIndicator size="small" color={C.accent} />
+              )}
+              <View style={styles.downloadOverlayText}>
+                <Text style={styles.downloadOverlayTitle}>
+                  {downloadPhase === "preparing"
+                    ? "Preparing download…"
+                    : downloadPhase === "downloading"
+                    ? `Downloading… ${Math.round(downloadProgress * 100)}%`
+                    : "Download complete!"}
+                </Text>
+                {downloadPhase === "downloading" ? (
+                  <View style={styles.downloadProgressBar}>
+                    <View style={[styles.downloadProgressFill, { width: `${Math.round(downloadProgress * 100)}%` as any }]} />
+                  </View>
+                ) : downloadPhase === "done" ? (
+                  <Text style={styles.downloadOverlaySub}>
+                    {lastDownloadedQuality?.quality ?? ""} · Tap Share to send it
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+            {isDownloading && (
+              <Pressable style={styles.downloadCancelBtn} onPress={handleCancelDownload}>
+                <Feather name="x" size={16} color={C.textMuted} />
+              </Pressable>
+            )}
+          </View>
+        </Animated.View>
+      ) : null}
 
       {Platform.OS === "web" && videoModalUrl ? (
         <Modal
