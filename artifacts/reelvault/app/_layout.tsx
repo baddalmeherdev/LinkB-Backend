@@ -14,6 +14,46 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 const queryClient = new QueryClient();
 const C = Colors.dark;
 
+function setupPWA() {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+
+  // Inject manifest link
+  if (!document.getElementById("pwa-manifest")) {
+    const link = document.createElement("link");
+    link.id = "pwa-manifest";
+    link.rel = "manifest";
+    link.href = "/manifest.json";
+    document.head.appendChild(link);
+  }
+
+  // Inject theme-color
+  if (!document.getElementById("pwa-theme")) {
+    const meta = document.createElement("meta");
+    meta.id = "pwa-theme";
+    meta.name = "theme-color";
+    meta.content = "#0A0A0F";
+    document.head.appendChild(meta);
+
+    const metaApple = document.createElement("meta");
+    metaApple.name = "apple-mobile-web-app-capable";
+    metaApple.content = "yes";
+    document.head.appendChild(metaApple);
+
+    const metaAppleStatus = document.createElement("meta");
+    metaAppleStatus.name = "apple-mobile-web-app-status-bar-style";
+    metaAppleStatus.content = "black-translucent";
+    document.head.appendChild(metaAppleStatus);
+  }
+
+  // Register service worker
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => console.log("[SW] registered:", reg.scope))
+      .catch((e) => console.warn("[SW] registration failed:", e));
+  }
+}
+
 function injectWebFonts() {
   if (typeof document === "undefined") return;
   if (document.getElementById("linkdrop-fonts")) return;
@@ -111,6 +151,7 @@ function NativeLayout() {
 function WebLayout() {
   useEffect(() => {
     injectWebFonts();
+    setupPWA();
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 

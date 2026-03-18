@@ -1,0 +1,142 @@
+Upgrade my app "LinkDrop" into a mobile-app-like downloader with deep sharing integration, premium quality control, and a built-in browser.
+
+Main Goal:
+Make the app behave like a real Android downloader app:
+- Appear in system share menu
+- Accept shared links
+- Download video
+- Allow direct file sharing after download
+
+-----------------------------------
+1. SHARE TARGET INTEGRATION (VERY IMPORTANT)
+-----------------------------------
+- Convert app into PWA with Share Target API
+- So when user clicks "Share" from any app and selects LinkDrop:
+  - App opens automatically
+  - Receives shared URL
+  - Auto-starts metadata fetch
+
+- If possible, add Android WebView wrapper support so APK version can:
+  - Register as share receiver (intent-filter)
+
+-----------------------------------
+2. AUTO DOWNLOAD + SHARE FLOW
+-----------------------------------
+Flow:
+- If user shares link → app opens → detects URL
+- Show preview (thumbnail + title)
+- If user clicks "Download":
+  - Start download
+  - Save file locally
+
+AFTER DOWNLOAD:
+- Add "Share File" button
+- Share actual video file (not link)
+- Use Web Share API (if supported)
+- Fallback: download + manual share
+
+-----------------------------------
+3. SMART SHARE BUTTON LOGIC
+-----------------------------------
+- If video already downloaded:
+  → "Share File" directly shares video
+
+- If not downloaded:
+  → Clicking "Share" will:
+     1. Start download
+     2. After complete → auto trigger share
+
+-----------------------------------
+4. PREMIUM QUALITY SYSTEM
+-----------------------------------
+- Free users:
+  - Allow only up to 720p
+
+- Premium users:
+  - Unlock 1080p and BEST quality
+
+- If free user selects >720p:
+  - Show popup:
+    "Upgrade to Premium to unlock HD+ downloads"
+
+- Enforce this both in UI and backend
+
+-----------------------------------
+5. FAST DOWNLOAD OPTIMIZATION
+-----------------------------------
+- Optimize yt-dlp:
+  - Use bestvideo+bestaudio merge
+  - Add faster format selection
+- Show progress bar
+- Reduce waiting time
+
+-----------------------------------
+6. BUILT-IN BROWSER (CHROME-LIKE BASIC)
+-----------------------------------
+Add "Browser" tab:
+- URL/Search bar
+- Back / Forward / Reload
+- Load pages inside iframe/webview
+
+Add button:
+- "Download from this page"
+  → Captures current URL
+  → Sends to downloader
+
+Make browsing smooth and mobile friendly
+
+-----------------------------------
+7. FILE HANDLING
+-----------------------------------
+- Store downloaded files properly
+- Maintain file list
+- Allow:
+  - Play video
+  - Share file
+  - Re-download
+
+-----------------------------------
+8. UI IMPROVEMENT
+-----------------------------------
+- Professional dark UI
+- Smooth animations
+- Clean layout
+- Mobile app feel
+- Buttons:
+  - Download
+  - Share
+  - Open in Browser
+
+-----------------------------------
+9. ERROR HANDLING
+-----------------------------------
+- Handle:
+  - Invalid links
+  - Unsupported sites
+  - Download failure
+- Show proper messages (no crashes)
+
+-----------------------------------
+10. MONETIZATION
+-----------------------------------
+- Keep Premium system
+- Add UPI section:
+  - UPI ID: winuptournament@fam
+  - Button: Pay Now
+  - Button: I Have Paid → unlock premium
+
+-----------------------------------
+11. IMPORTANT RULE
+-----------------------------------
+- Only allow public content downloads
+- Add disclaimer:
+  "Use for personal and permitted content only"
+
+-----------------------------------
+12. OUTPUT REQUIRED
+-----------------------------------
+- Fully upgraded code (frontend + backend)
+- PWA setup (manifest + service worker)
+- Share target config
+- Clean working version (no major bugs)
+- Instructions to run on Replit

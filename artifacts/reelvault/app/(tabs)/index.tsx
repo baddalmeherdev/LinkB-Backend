@@ -1,8 +1,10 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams } from "expo-router";
+import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -80,7 +82,7 @@ function generateHashtags(title: string, platform: string): string {
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
   const { isPremium, addToHistory } = useApp();
-  const { autoUrl } = useLocalSearchParams<{ autoUrl?: string }>();
+  const { autoUrl, shareText } = useLocalSearchParams<{ autoUrl?: string; shareText?: string }>();
   const {
     fetchPreview,
     fetchVideoInfo,
@@ -105,10 +107,16 @@ export default function DownloadScreen() {
   const [videoModalUrl, setVideoModalUrl] = useState<string | null>(null);
   const [videoPlayerError, setVideoPlayerError] = useState(false);
   const [videoPlayerLoading, setVideoPlayerLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadPhase, setDownloadPhase] = useState<"preparing" | "downloading" | "done" | "">("");
+  const [nativeFileUri, setNativeFileUri] = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const videoLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const downloadAbortRef = useRef<AbortController | null>(null);
+  const downloadResumableRef = useRef<FileSystem.DownloadResumable | null>(null);
   const inputBorderAnim = useSharedValue(0);
 
   const inputStyle = useAnimatedStyle(() => ({
@@ -159,8 +167,16 @@ export default function DownloadScreen() {
   useEffect(() => {
     if (autoUrl && typeof autoUrl === "string" && isValidUrl(autoUrl)) {
       handleUrlChange(autoUrl);
+      return;
     }
-  }, [autoUrl]);
+    // Handle text shared from PWA share target that may contain a URL
+    if (shareText && typeof shareText === "string") {
+      const match = shareText.match(/https?:\/\/[^\s]+/);
+      if (match && isValidUrl(match[0])) {
+        handleUrlChange(match[0]);
+      }
+    }
+  }, [autoUrl, shareText]);
 
   const handlePaste = async () => {
     const text = await Clipboard.getStringAsync();
@@ -203,6 +219,14 @@ export default function DownloadScreen() {
     }
   }, [url, fetchPreview, fetchVideoInfo, clearError]);
 
+  const handleCancelDownload = () => {
+    downloadAbortRef.current?.abort();
+    downloadResumableRef.current?.pauseAsync().catch(() => {});
+    setIsDownloading(false);
+    setDownloadProgress(0);
+    setDownloadPhase("");
+  };
+
   const handleDownload = async (quality: VideoQuality) => {
     if (!videoInfo) return;
 
@@ -228,18 +252,109 @@ export default function DownloadScreen() {
     });
 
     setLastDownloadedQuality(quality);
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setDownloadPhase("preparing");
+    setNativeFileUri(null);
 
     if (Platform.OS === "web") {
-      const a = document.createElement("a");
-      a.href = streamUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setDownloadedUri(streamUrl);
+      try {
+        const controller = new AbortController();
+        downloadAbortRef.current = controller;
+
+        setDownloadPhase("downloading");
+        const response = await fetch(streamUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+        const contentLength = Number(response.headers.get("content-length")) || 0;
+        const reader = response.body!.getReader();
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+
+        // Animate progress smoothly
+        let fakeProgress = 0;
+        const fakeTimer = setInterval(() => {
+          fakeProgress = Math.min(fakeProgress + 0.012, 0.85);
+          if (contentLength === 0) setDownloadProgress(fakeProgress);
+        }, 400);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (contentLength > 0) {
+            setDownloadProgress(received / contentLength);
+          }
+        }
+
+        clearInterval(fakeTimer);
+        setDownloadProgress(1);
+        setDownloadPhase("done");
+
+        const blob = new Blob(chunks);
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        setDownloadedUri(blobUrl);
+      } catch (e: any) {
+        if (e?.name !== "AbortError") {
+          Alert.alert("Download failed", "Could not download the video. Please try again.");
+        }
+        setDownloadPhase("");
+      } finally {
+        setIsDownloading(false);
+        downloadAbortRef.current = null;
+      }
     } else {
-      await Linking.openURL(streamUrl);
-      setDownloadedUri(streamUrl);
+      // Native: use expo-file-system with real progress
+      try {
+        const destPath = `${FileSystem.documentDirectory}${filename}`;
+        const downloadResumable = FileSystem.createDownloadResumable(
+          streamUrl,
+          destPath,
+          {},
+          (progress) => {
+            const { totalBytesWritten, totalBytesExpectedToWrite } = progress;
+            if (totalBytesExpectedToWrite > 0) {
+              setDownloadProgress(totalBytesWritten / totalBytesExpectedToWrite);
+            } else {
+              // No content-length: smooth fake progress
+              setDownloadProgress((p) => Math.min(p + 0.015, 0.88));
+            }
+            setDownloadPhase("downloading");
+          }
+        );
+        downloadResumableRef.current = downloadResumable;
+
+        setDownloadPhase("downloading");
+        const result = await downloadResumable.downloadAsync();
+        setDownloadProgress(1);
+        setDownloadPhase("done");
+
+        if (result?.uri) {
+          setNativeFileUri(result.uri);
+          setDownloadedUri(result.uri);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      } catch (e: any) {
+        if (!String(e).includes("cancel")) {
+          // Fallback: open in browser
+          await Linking.openURL(streamUrl);
+          setDownloadedUri(streamUrl);
+          setDownloadPhase("done");
+        } else {
+          setDownloadPhase("");
+        }
+      } finally {
+        setIsDownloading(false);
+        downloadResumableRef.current = null;
+      }
     }
   };
 
@@ -247,27 +362,56 @@ export default function DownloadScreen() {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    const quality = lastDownloadedQuality ?? videoInfo.qualities.find(
-      (q) => !q.isHD && !q.isAudioOnly
-    ) ?? videoInfo.qualities[0];
-
-    if (!quality) return;
-
-    const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
-    const ext = quality.isAudioOnly ? "mp3" : "mp4";
-    const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 60);
-    const filename = `${safeTitle}_${quality.quality}.${ext}`;
-
-    if (Platform.OS === "web") {
-      const a = document.createElement("a");
-      a.href = streamUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else {
-      await Linking.openURL(streamUrl);
+    // Native: share the actual file if downloaded
+    if (Platform.OS !== "web") {
+      if (nativeFileUri) {
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(nativeFileUri, {
+            mimeType: lastDownloadedQuality?.isAudioOnly ? "audio/mpeg" : "video/mp4",
+            dialogTitle: `Share ${videoInfo.title}`,
+          });
+          return;
+        }
+      }
+      // No file downloaded: share the URL
+      await Linking.openURL(videoInfo.originalUrl);
+      return;
     }
+
+    // Web: use Web Share API
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        // Try sharing the downloaded blob if available
+        if (downloadedUri?.startsWith("blob:") && lastDownloadedQuality) {
+          const response = await fetch(downloadedUri);
+          const blob = await response.blob();
+          const ext = lastDownloadedQuality.isAudioOnly ? "mp3" : "mp4";
+          const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 50);
+          const file = new File([blob], `${safeTitle}.${ext}`, { type: blob.type });
+
+          if ((navigator as any).canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], title: videoInfo.title });
+            return;
+          }
+        }
+        // Fall back to sharing the URL
+        await navigator.share({
+          title: videoInfo.title,
+          text: `Download "${videoInfo.title}" with LinkDrop`,
+          url: videoInfo.originalUrl,
+        });
+      } catch (e: any) {
+        if (e?.name !== "AbortError") {
+          Alert.alert("Share", "Sharing not supported on this browser.");
+        }
+      }
+      return;
+    }
+
+    // No Web Share API: copy link to clipboard
+    await Clipboard.setStringAsync(videoInfo.originalUrl);
+    Alert.alert("Link Copied!", "Video URL copied to clipboard.");
   };
 
   const handleCaption = () => {
