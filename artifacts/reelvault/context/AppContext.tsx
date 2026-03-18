@@ -37,6 +37,8 @@ export type DownloadHistoryItem = {
   downloadedAt: number;
   url: string;
   filename: string;
+  localUri?: string;
+  isAudio?: boolean;
 };
 
 type AppContextType = {

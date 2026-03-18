@@ -88,6 +88,7 @@ export default function DownloadScreen() {
     fetchPreview,
     fetchVideoInfo,
     getStreamUrl,
+    getPipeUrl,
     getDirectDownloadUrl,
     isLoadingPreview,
     isLoadingInfo,
@@ -250,56 +251,31 @@ export default function DownloadScreen() {
     const safeTitle = videoInfo.title.replace(/[^a-zA-Z0-9 _-]/g, "_").substring(0, 60);
     const fallbackFilename = `${safeTitle}_${quality.quality}.${ext}`;
 
-    await addToHistory({
-      title: videoInfo.title,
-      thumbnail: videoInfo.thumbnail,
-      platform: videoInfo.platform,
-      quality: quality.quality,
-      url: videoInfo.originalUrl,
-      filename: fallbackFilename,
-    });
-
     setLastDownloadedQuality(quality);
     setIsDownloading(true);
     setDownloadProgress(0);
     setDownloadPhase("preparing");
     setNativeFileUri(null);
 
-    // --- Fast path: resolve direct CDN URL (no server-side download) ---
-    // This resolves the direct download URL in ~3-8s and lets the
-    // device download directly from the CDN at full speed.
-    const direct = await getDirectDownloadUrl(
-      videoInfo.originalUrl, quality, videoInfo.title, isPremium
-    );
-
-    const downloadUrl = direct?.directUrl ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
-    const filename = direct?.filename ?? fallbackFilename;
-
     if (Platform.OS === "web") {
+      // ── WEB: stream through /pipe (server resolves CDN + proxies, no temp file) ──
+      // This NEVER opens a new tab — the download happens inside the app as a blob.
       try {
         const controller = new AbortController();
         downloadAbortRef.current = controller;
 
+        // /pipe endpoint: yt-dlp resolves CDN URL (~3-8s) then pipes it straight back.
+        const pipeUrl = getPipeUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+
         setDownloadPhase("downloading");
 
-        // For direct CDN URLs, trigger a browser download via anchor tag
-        if (direct?.directUrl) {
-          setDownloadProgress(0.5);
-          const a = document.createElement("a");
-          a.href = direct.directUrl;
-          a.download = filename;
-          a.target = "_blank";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setDownloadProgress(1);
-          setDownloadPhase("done");
-          setDownloadedUri(direct.directUrl);
-          return;
-        }
+        let fakeProgress = 0;
+        const fakeTimer = setInterval(() => {
+          fakeProgress = Math.min(fakeProgress + 0.008, 0.88);
+          setDownloadProgress(fakeProgress);
+        }, 400);
 
-        // Fallback: stream through server
-        const response = await fetch(downloadUrl, { signal: controller.signal });
+        const response = await fetch(pipeUrl, { signal: controller.signal });
         if (!response.ok) throw new Error(`Server error: ${response.status}`);
 
         const contentLength = Number(response.headers.get("content-length")) || 0;
@@ -307,18 +283,13 @@ export default function DownloadScreen() {
         const chunks: Uint8Array[] = [];
         let received = 0;
 
-        let fakeProgress = 0;
-        const fakeTimer = setInterval(() => {
-          fakeProgress = Math.min(fakeProgress + 0.012, 0.85);
-          if (contentLength === 0) setDownloadProgress(fakeProgress);
-        }, 400);
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           chunks.push(value);
           received += value.length;
           if (contentLength > 0) {
+            clearInterval(fakeTimer);
             setDownloadProgress(received / contentLength);
           }
         }
@@ -327,16 +298,29 @@ export default function DownloadScreen() {
         setDownloadProgress(1);
         setDownloadPhase("done");
 
-        const blob = new Blob(chunks);
+        const mimeType = quality.isAudioOnly ? "audio/mpeg" : "video/mp4";
+        const blob = new Blob(chunks, { type: mimeType });
         const blobUrl = URL.createObjectURL(blob);
+
+        // Trigger browser download — stays in app, no new tab
         const a = document.createElement("a");
         a.href = blobUrl;
-        a.download = filename;
+        a.download = fallbackFilename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
         setDownloadedUri(blobUrl);
+
+        await addToHistory({
+          title: videoInfo.title,
+          thumbnail: videoInfo.thumbnail,
+          platform: videoInfo.platform,
+          quality: quality.quality,
+          url: videoInfo.originalUrl,
+          filename: fallbackFilename,
+          isAudio: quality.isAudioOnly,
+        });
       } catch (e: any) {
         if (e?.name !== "AbortError") {
           Alert.alert("Download failed", "Could not download the video. Please try again.");
@@ -347,8 +331,17 @@ export default function DownloadScreen() {
         downloadAbortRef.current = null;
       }
     } else {
-      // Native: use expo-file-system with real progress
+      // ── NATIVE: direct CDN URL → expo-file-system (fastest, no server round-trip) ──
       try {
+        // Resolve direct CDN URL first (~3-8s) — faster than full server download
+        const direct = await getDirectDownloadUrl(
+          videoInfo.originalUrl, quality, videoInfo.title, isPremium
+        );
+
+        const downloadUrl = direct?.directUrl
+          ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+        const filename = direct?.filename ?? fallbackFilename;
+
         const destPath = `${FileSystem.documentDirectory}${filename}`;
         const downloadResumable = FileSystem.createDownloadResumable(
           downloadUrl,
@@ -371,17 +364,61 @@ export default function DownloadScreen() {
         setDownloadProgress(1);
         setDownloadPhase("done");
 
-        if (result?.uri) {
-          setNativeFileUri(result.uri);
-          setDownloadedUri(result.uri);
+        const savedUri = result?.uri ?? null;
+        if (savedUri) {
+          setNativeFileUri(savedUri);
+          setDownloadedUri(savedUri);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
+
+        await addToHistory({
+          title: videoInfo.title,
+          thumbnail: videoInfo.thumbnail,
+          platform: videoInfo.platform,
+          quality: quality.quality,
+          url: videoInfo.originalUrl,
+          filename,
+          localUri: savedUri ?? undefined,
+          isAudio: quality.isAudioOnly,
+        });
       } catch (e: any) {
         if (!String(e).includes("cancel")) {
-          // Fallback: open in browser
-          await Linking.openURL(downloadUrl);
-          setDownloadedUri(downloadUrl);
-          setDownloadPhase("done");
+          // Fallback: stream via server
+          try {
+            const streamUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+            const destPath = `${FileSystem.documentDirectory}${fallbackFilename}`;
+            const dlr = FileSystem.createDownloadResumable(
+              streamUrl, destPath, {},
+              (p) => {
+                if (p.totalBytesExpectedToWrite > 0) {
+                  setDownloadProgress(p.totalBytesWritten / p.totalBytesExpectedToWrite);
+                } else {
+                  setDownloadProgress((prev) => Math.min(prev + 0.015, 0.88));
+                }
+              }
+            );
+            downloadResumableRef.current = dlr;
+            const result2 = await dlr.downloadAsync();
+            setDownloadProgress(1);
+            setDownloadPhase("done");
+            const savedUri = result2?.uri ?? null;
+            if (savedUri) {
+              setNativeFileUri(savedUri);
+              setDownloadedUri(savedUri);
+            }
+            await addToHistory({
+              title: videoInfo.title,
+              thumbnail: videoInfo.thumbnail,
+              platform: videoInfo.platform,
+              quality: quality.quality,
+              url: videoInfo.originalUrl,
+              filename: fallbackFilename,
+              localUri: savedUri ?? undefined,
+              isAudio: quality.isAudioOnly,
+            });
+          } catch {
+            setDownloadPhase("");
+          }
         } else {
           setDownloadPhase("");
         }

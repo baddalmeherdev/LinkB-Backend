@@ -401,6 +401,134 @@ router.get("/direct", async (req: Request, res: Response) => {
   endHeartbeat(res, usedHeartbeat, result!);
 });
 
+// ---- GET /pipe ------------------------------------------------------------
+// Resolves the direct CDN URL, then proxies the response back to the client.
+// This lets the browser download video without leaving the app or opening a
+// new tab. The server acts as a transparent pipe — no temp files, no disk I/O.
+
+router.get("/pipe", async (req: Request, res: Response) => {
+  const { url, formatId, quality, isPremium, title } = req.query as {
+    url?: string; formatId?: string; quality?: string;
+    isPremium?: string; title?: string;
+  };
+
+  if (!url || !formatId) {
+    res.status(400).json({ error: "INVALID_REQUEST", message: "url and formatId are required." });
+    return;
+  }
+  if (!validateUrl(url)) {
+    res.status(400).json({ error: "INVALID_URL", message: "Invalid URL." });
+    return;
+  }
+
+  const premiumUser = isPremium === "true";
+  const isHdFormat = ["1080p", "1440p", "2160p"].includes(quality ?? "");
+  if (isHdFormat && !premiumUser) {
+    res.status(403).json({ error: "PREMIUM_REQUIRED", message: "HD downloads require Premium." });
+    return;
+  }
+
+  const isAudioOnly = quality === "Audio Only" || formatId === "bestaudio";
+  const ext = isAudioOnly ? "mp3" : "mp4";
+  const safeTitle = (title ?? "video").replace(/[^a-zA-Z0-9_\- ]/g, "_").substring(0, 80);
+  const filename = `${safeTitle}.${ext}`;
+
+  const handler = getHandler(url);
+  const cfg = handler.getConfig();
+
+  const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
+  const ytdlpFormat = cfg.downloadFormatOverride
+    ? cfg.downloadFormatOverride(formatId, isAudioOnly)
+    : isFullSelector
+      ? formatId
+      : isAudioOnly
+        ? `${formatId}/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio`
+        : `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio[ext=webm]/${formatId}+bestaudio/${formatId}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
+
+  console.log(`[pipe] handler=${handler.name} format=${ytdlpFormat}`);
+
+  // Step 1: Resolve direct CDN URL
+  let cdnUrl: string;
+  try {
+    const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+      const proc = spawn(YTDLP, [
+        ...BASE_YTDLP_ARGS,
+        ...cfg.extraArgs,
+        "-f", ytdlpFormat,
+        "--get-url",
+        url,
+      ], { stdio: ["ignore", "pipe", "pipe"] });
+
+      let out = "";
+      proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+      proc.stderr.on("data", (d: Buffer) => {
+        const line = d.toString().trim();
+        if (line && !line.startsWith("[debug]")) console.log("[pipe-yt-dlp]", line);
+      });
+      proc.on("error", reject);
+      proc.on("close", (code) => {
+        if (code === 0) resolve({ stdout: out });
+        else reject(new Error(`yt-dlp exited ${code}`));
+      });
+    });
+
+    const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
+    if (!lines[0]) throw new Error("No CDN URL resolved.");
+    cdnUrl = lines[0];
+  } catch (err) {
+    console.error("[pipe] URL resolve failed:", err);
+    // Fallback: stream via temp file
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    return streamViaTemp({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: premiumUser, isAudioOnly });
+  }
+
+  // Step 2: Pipe CDN → client (no temp file)
+  try {
+    console.log(`[pipe] proxying from CDN...`);
+    const cdnResp = await fetch(cdnUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": new URL(url).origin,
+        "Range": req.headers.range ?? "",
+      },
+    });
+
+    if (!cdnResp.ok || !cdnResp.body) {
+      throw new Error(`CDN responded ${cdnResp.status}`);
+    }
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Cache-Control", "no-cache");
+    if (cdnResp.headers.get("content-length")) {
+      res.setHeader("Content-Length", cdnResp.headers.get("content-length")!);
+    }
+    if (cdnResp.status === 206) res.status(206);
+
+    const { Readable } = await import("stream");
+    const readable = Readable.fromWeb(cdnResp.body as any);
+    readable.pipe(res);
+    readable.on("error", (e) => {
+      console.error("[pipe] stream error:", e);
+      if (!res.writableEnded) res.destroy();
+    });
+    req.on("close", () => readable.destroy());
+    console.log(`[pipe] streaming OK`);
+  } catch (err) {
+    console.error("[pipe] CDN proxy failed, falling back to streamViaTemp:", err);
+    if (!res.headersSent) {
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
+      res.flushHeaders();
+    }
+    return streamViaTemp({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: premiumUser, isAudioOnly });
+  }
+});
+
 // ---- GET /update ----------------------------------------------------------
 // Triggers yt-dlp self-update. Run periodically to keep extractors current.
 

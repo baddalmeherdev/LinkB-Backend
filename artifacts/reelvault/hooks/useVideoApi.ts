@@ -228,6 +228,24 @@ export function useVideoApi() {
     }
   };
 
+  // Returns a URL that the server resolves + pipes directly to the client.
+  // No temp file, no new tab — the browser downloads in-app via fetch→blob.
+  const getPipeUrl = (
+    videoUrl: string,
+    quality: VideoQuality,
+    title: string,
+    isPremium: boolean
+  ): string => {
+    const params = new URLSearchParams({
+      url: videoUrl,
+      formatId: quality.formatId,
+      quality: quality.quality,
+      isPremium: String(isPremium),
+      title,
+    });
+    return `${BASE_URL}/api/video/pipe?${params.toString()}`;
+  };
+
   const clearError = () => setError(null);
 
   return {
@@ -235,6 +253,7 @@ export function useVideoApi() {
     fetchVideoInfo,
     getPlayUrl,
     getStreamUrl,
+    getPipeUrl,
     getDirectDownloadUrl,
     isLoadingPreview,
     isLoadingInfo,

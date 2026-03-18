@@ -2,11 +2,13 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Sharing from "expo-sharing";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
   FlatList,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -37,20 +39,34 @@ function HistoryItem({
   item,
   onDelete,
   onRedownload,
+  onPlay,
+  onShare,
 }: {
   item: DownloadHistoryItem;
   onDelete: (id: string) => void;
   onRedownload: (item: DownloadHistoryItem) => void;
+  onPlay: (item: DownloadHistoryItem) => void;
+  onShare: (item: DownloadHistoryItem) => void;
 }) {
+  const hasLocal = !!item.localUri;
+
   return (
     <Animated.View entering={FadeInDown} exiting={FadeOutLeft} style={styles.itemCard}>
-      {item.thumbnail ? (
-        <Image source={{ uri: item.thumbnail }} style={styles.thumb} contentFit="cover" />
-      ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder]}>
-          <Feather name="film" size={20} color={C.textMuted} />
-        </View>
-      )}
+      <Pressable onPress={() => onPlay(item)} style={styles.thumbWrap}>
+        {item.thumbnail ? (
+          <Image source={{ uri: item.thumbnail }} style={styles.thumb} contentFit="cover" />
+        ) : (
+          <View style={[styles.thumb, styles.thumbPlaceholder]}>
+            <Feather name={item.isAudio ? "music" : "film"} size={20} color={C.textMuted} />
+          </View>
+        )}
+        {hasLocal && (
+          <View style={styles.playOverlay}>
+            <Feather name="play" size={16} color="#fff" />
+          </View>
+        )}
+      </Pressable>
+
       <View style={styles.itemInfo}>
         <Text style={styles.itemTitle} numberOfLines={2}>
           {item.title}
@@ -63,17 +79,40 @@ function HistoryItem({
           </View>
         </View>
         <Text style={styles.itemTime}>{formatRelativeTime(item.downloadedAt)}</Text>
+
         <View style={styles.itemActions}>
-          <Pressable
-            style={styles.redownloadBtn}
-            onPress={() => onRedownload(item)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Feather name="refresh-cw" size={12} color={C.accent} />
-            <Text style={styles.redownloadText}>Re-download</Text>
-          </Pressable>
+          {hasLocal ? (
+            <>
+              <Pressable
+                style={styles.actionChip}
+                onPress={() => onPlay(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <Feather name="play-circle" size={12} color={C.accent} />
+                <Text style={styles.actionChipText}>Play</Text>
+              </Pressable>
+              <Pressable
+                style={styles.actionChip}
+                onPress={() => onShare(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <Feather name="share-2" size={12} color={C.accent} />
+                <Text style={styles.actionChipText}>Share</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              style={styles.actionChip}
+              onPress={() => onRedownload(item)}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <Feather name="refresh-cw" size={12} color={C.accent} />
+              <Text style={styles.actionChipText}>Re-download</Text>
+            </Pressable>
+          )}
         </View>
       </View>
+
       <Pressable
         onPress={() => onDelete(item.id)}
         style={styles.deleteBtn}
@@ -91,6 +130,10 @@ export default function HistoryScreen() {
   const { history, removeFromHistory, clearHistory } = useApp();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
+  const [playerUri, setPlayerUri] = useState<string | null>(null);
+  const [playerTitle, setPlayerTitle] = useState<string>("");
+  const [playerIsAudio, setPlayerIsAudio] = useState(false);
+
   const handleDelete = (id: string) => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     removeFromHistory(id);
@@ -99,6 +142,50 @@ export default function HistoryScreen() {
   const handleRedownload = (item: DownloadHistoryItem) => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push({ pathname: "/(tabs)/", params: { autoUrl: item.url } });
+  };
+
+  const handlePlay = (item: DownloadHistoryItem) => {
+    if (!item.localUri) {
+      // No local file — go to download screen
+      router.push({ pathname: "/(tabs)/", params: { autoUrl: item.url } });
+      return;
+    }
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPlayerTitle(item.title);
+    setPlayerIsAudio(!!item.isAudio);
+    setPlayerUri(item.localUri);
+  };
+
+  const handleShare = async (item: DownloadHistoryItem) => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (Platform.OS !== "web" && item.localUri) {
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(item.localUri, {
+          mimeType: item.isAudio ? "audio/mpeg" : "video/mp4",
+          dialogTitle: `Share ${item.title}`,
+        });
+        return;
+      }
+    }
+
+    // Web: use Web Share API or clipboard
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: item.title,
+          text: `Download "${item.title}" with LinkB Downloader`,
+          url: item.url,
+        });
+      } catch (e: any) {
+        if (e?.name !== "AbortError") {
+          Alert.alert("Shared!", "Link copied to clipboard.");
+        }
+      }
+    } else {
+      Alert.alert("Share", "Open the video URL to share it:\n" + item.url);
+    }
   };
 
   const handleClearAll = () => {
@@ -136,7 +223,13 @@ export default function HistoryScreen() {
         data={history}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <HistoryItem item={item} onDelete={handleDelete} onRedownload={handleRedownload} />
+          <HistoryItem
+            item={item}
+            onDelete={handleDelete}
+            onRedownload={handleRedownload}
+            onPlay={handlePlay}
+            onShare={handleShare}
+          />
         )}
         contentContainerStyle={[
           styles.listContent,
@@ -159,6 +252,61 @@ export default function HistoryScreen() {
           </View>
         }
       />
+
+      {/* ── In-app video/audio player modal ── */}
+      {playerUri ? (
+        <Modal
+          transparent
+          animationType="fade"
+          visible={!!playerUri}
+          onRequestClose={() => setPlayerUri(null)}
+        >
+          <Pressable style={styles.playerOverlay} onPress={() => setPlayerUri(null)}>
+            <Pressable style={styles.playerCard} onPress={() => {}}>
+              <View style={styles.playerHeader}>
+                <Text style={styles.playerTitle} numberOfLines={1}>{playerTitle}</Text>
+                <Pressable onPress={() => setPlayerUri(null)} style={styles.playerCloseBtn}>
+                  <Feather name="x" size={20} color={C.text} />
+                </Pressable>
+              </View>
+
+              {playerIsAudio ? (
+                <View style={styles.audioPlayerPlaceholder}>
+                  <Feather name="music" size={48} color={C.accent} />
+                  <Text style={styles.audioPlayerText}>Audio file</Text>
+                  <Text style={styles.audioPlayerSub}>{playerTitle}</Text>
+                </View>
+              ) : null}
+
+              {Platform.OS === "web" && !playerIsAudio ? (
+                <video
+                  src={playerUri}
+                  controls
+                  autoPlay
+                  style={{ width: "100%", borderRadius: 12, maxHeight: 340, background: "#000" }}
+                  controlsList="nodownload"
+                  onContextMenu={(e) => e.preventDefault()}
+                />
+              ) : null}
+
+              {Platform.OS === "web" && playerIsAudio ? (
+                <audio
+                  src={playerUri}
+                  controls
+                  autoPlay
+                  style={{ width: "100%", marginTop: 16 }}
+                />
+              ) : null}
+
+              {Platform.OS !== "web" ? (
+                <Text style={styles.nativePlayHint}>
+                  File saved to your device. Use your files app to play it.
+                </Text>
+              ) : null}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -206,14 +354,25 @@ const styles = StyleSheet.create({
     borderColor: C.surfaceBorder,
     alignItems: "center",
   },
+  thumbWrap: {
+    position: "relative",
+  },
   thumb: {
     width: 80,
-    height: 70,
+    height: 80,
     backgroundColor: C.surface,
   },
   thumbPlaceholder: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  playOverlay: {
+    position: "absolute",
+    inset: 0,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 0,
   },
   itemInfo: {
     flex: 1,
@@ -257,8 +416,9 @@ const styles = StyleSheet.create({
   itemActions: {
     flexDirection: "row",
     marginTop: 4,
+    gap: 8,
   },
-  redownloadBtn: {
+  actionChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
@@ -269,7 +429,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.accent + "50",
   },
-  redownloadText: {
+  actionChipText: {
     color: C.accent,
     fontSize: 11,
     fontFamily: "Inter_600SemiBold",
@@ -303,5 +463,65 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
+  },
+  playerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  playerCard: {
+    backgroundColor: C.surfaceElevated,
+    borderRadius: 20,
+    padding: 20,
+    width: "100%",
+    maxWidth: 520,
+    borderWidth: 1,
+    borderColor: C.surfaceBorder,
+  },
+  playerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+    gap: 12,
+  },
+  playerTitle: {
+    flex: 1,
+    color: C.text,
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
+  },
+  playerCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: C.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  audioPlayerPlaceholder: {
+    alignItems: "center",
+    paddingVertical: 32,
+    gap: 10,
+  },
+  audioPlayerText: {
+    color: C.text,
+    fontSize: 16,
+    fontFamily: "Inter_600SemiBold",
+  },
+  audioPlayerSub: {
+    color: C.textMuted,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+  },
+  nativePlayHint: {
+    color: C.textMuted,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    paddingVertical: 24,
+    lineHeight: 20,
   },
 });
