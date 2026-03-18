@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Modal,
@@ -102,6 +103,7 @@ export default function DownloadScreen() {
   const [showHashtags, setShowHashtags] = useState(false);
   const [videoModalUrl, setVideoModalUrl] = useState<string | null>(null);
   const [videoPlayerError, setVideoPlayerError] = useState(false);
+  const [videoPlayerLoading, setVideoPlayerLoading] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -297,6 +299,7 @@ export default function DownloadScreen() {
   const handlePlay = async (videoUrl: string) => {
     if (Platform.OS === "web") {
       setVideoPlayerError(false);
+      setVideoPlayerLoading(true);
       setVideoModalUrl(getPlayUrl(videoUrl));
     } else {
       await WebBrowser.openBrowserAsync(videoUrl, {
@@ -685,14 +688,27 @@ export default function DownloadScreen() {
                     <Text style={styles.videoErrorSub}>Try downloading it instead</Text>
                   </View>
                 ) : (
-                  /* @ts-ignore - web only */
-                  <video
-                    src={videoModalUrl}
-                    controls
-                    autoPlay
-                    style={{ width: "100%", height: "100%", display: "block", backgroundColor: "#000" }}
-                    onError={() => setVideoPlayerError(true)}
-                  />
+                  <>
+                    {videoPlayerLoading ? (
+                      <View style={styles.videoLoadingOverlay}>
+                        <ActivityIndicator size="large" color={C.accent} />
+                        <Text style={styles.videoLoadingText}>Loading video...</Text>
+                      </View>
+                    ) : null}
+                    {/* @ts-ignore - web only */}
+                    <video
+                      src={videoModalUrl!}
+                      controls
+                      autoPlay
+                      style={{
+                        width: "100%", height: "100%", display: "block",
+                        backgroundColor: "#000",
+                        opacity: videoPlayerLoading ? 0 : 1,
+                      }}
+                      onCanPlay={() => setVideoPlayerLoading(false)}
+                      onError={() => { setVideoPlayerError(true); setVideoPlayerLoading(false); }}
+                    />
+                  </>
                 )}
               </View>
             </Pressable>
@@ -908,13 +924,22 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   videoErrorState: {
-    flex: 1, alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: "#0A0A14", padding: 32,
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: "#0A0A14",
   },
   videoErrorText: {
     color: C.text, fontSize: 16, fontFamily: "Inter_600SemiBold",
   },
   videoErrorSub: {
     color: C.textMuted, fontSize: 13, fontFamily: "Inter_400Regular",
+  },
+  videoLoadingOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: "center", justifyContent: "center", gap: 12,
+    backgroundColor: "#000", zIndex: 10,
+  },
+  videoLoadingText: {
+    color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium",
   },
 });

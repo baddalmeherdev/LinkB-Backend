@@ -269,43 +269,69 @@ router.post("/info", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/play", (req: Request, res: Response) => {
+router.get("/play", async (req: Request, res: Response) => {
   const { url } = req.query as { url?: string };
   if (!url || !validateUrl(url)) {
     res.status(400).json({ error: "INVALID_URL", message: "Invalid URL" });
     return;
   }
 
-  res.setHeader("Content-Type", "video/mp4");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  console.log(`[play] Getting source URL for: ${url}`);
+  try {
+    const { stdout } = await execFileAsync(YTDLP, [
+      "--no-warnings",
+      "--no-playlist",
+      "-f", "best[height<=480]/best[height<=360]/best",
+      "--get-url",
+      url,
+    ], { timeout: 30000 });
 
-  const args = [
-    "--no-warnings",
-    "--no-playlist",
-    "-f", "best[ext=mp4][height<=480]/bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[height<=480]/best",
-    "-o", "-",
-    url,
-  ];
-
-  console.log(`[play] Streaming: ${url}`);
-  const proc = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
-
-  proc.stderr.on("data", (d: Buffer) => {
-    const line = d.toString().trim();
-    if (line) console.log("[yt-dlp play]", line);
-  });
-
-  proc.stdout.pipe(res);
-
-  req.on("close", () => proc.kill("SIGTERM"));
-
-  proc.on("error", (err) => {
-    console.error("[play] spawn error:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "PLAY_ERROR", message: "Could not stream video." });
+    const sourceUrl = stdout.trim().split("\n").filter(Boolean)[0];
+    if (!sourceUrl || !sourceUrl.startsWith("http")) {
+      throw new Error("No source URL returned");
     }
-  });
+
+    console.log(`[play] Streaming via ffmpeg from: ${sourceUrl.substring(0, 80)}...`);
+
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    const ffProc = spawn(FFMPEG, [
+      "-reconnect", "1",
+      "-reconnect_streamed", "1",
+      "-reconnect_delay_max", "5",
+      "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "-i", sourceUrl,
+      "-c", "copy",
+      "-f", "mp4",
+      "-movflags", "frag_keyframe+empty_moov+faststart",
+      "pipe:1",
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+
+    ffProc.stderr.on("data", (d: Buffer) => {
+      const line = d.toString().trim();
+      if (line && !line.startsWith("frame=")) console.log("[ffmpeg play]", line);
+    });
+
+    ffProc.stdout.pipe(res);
+    req.on("close", () => ffProc.kill("SIGTERM"));
+
+    ffProc.on("error", (err) => {
+      console.error("[play ffmpeg] error:", err);
+      if (!res.headersSent) res.status(500).json({ error: "FFMPEG_ERROR", message: "Could not stream video." });
+    });
+
+    ffProc.on("close", (code) => {
+      if (code !== 0 && code !== null) console.error(`[play] ffmpeg exited with code ${code}`);
+    });
+
+  } catch (err) {
+    console.error("[play] error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "PLAY_ERROR", message: "Could not load video for playback." });
+    }
+  }
 });
 
 router.get("/stream", async (req: Request, res: Response) => {
