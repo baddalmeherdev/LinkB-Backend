@@ -340,6 +340,14 @@ function streamDirect(opts: {
   const { req, res, url, format, ext, extraArgs } = opts;
   res.setHeader("Transfer-Encoding", "chunked");
 
+  // For video mp4: use fragmented mp4 (fMP4) output so that ffmpeg can mux
+  // audio+video to a non-seekable stdout pipe. Regular mp4 needs moov atom at
+  // start which requires seeking; fMP4 with empty_moov is fully streamable.
+  const mergeFormat = ext === "mp4" ? "mp4" : ext;
+  const ffmpegMovFlags = ext === "mp4"
+    ? ["--postprocessor-args", "ffmpeg:-movflags frag_keyframes+empty_moov+default_base_moof"]
+    : [];
+
   const proc = spawn(YTDLP, [
     "--no-warnings", "--no-playlist",
     "--no-check-certificate",
@@ -347,7 +355,8 @@ function streamDirect(opts: {
     "--buffer-size", "16K",
     ...extraArgs,
     "-f", format,
-    "--merge-output-format", ext,
+    "--merge-output-format", mergeFormat,
+    ...ffmpegMovFlags,
     "-o", "-",
     url,
   ], { stdio: ["ignore", "pipe", "pipe"] });

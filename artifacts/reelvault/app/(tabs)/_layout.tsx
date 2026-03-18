@@ -59,6 +59,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="browser"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
         name="premium"
         options={{
           title: "Premium",

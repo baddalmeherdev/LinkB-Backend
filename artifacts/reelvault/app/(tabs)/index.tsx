@@ -1,4 +1,5 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinkBLogo } from "@/components/LinkBLogo";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
@@ -500,9 +501,12 @@ export default function DownloadScreen() {
       />
 
       <View style={styles.header}>
-        <View>
-          <Text style={styles.appName}>LinkB Downloader</Text>
-          <Text style={styles.tagline}>Download any video, anywhere</Text>
+        <View style={styles.headerLeft}>
+          <LinkBLogo size={44} />
+          <View>
+            <Text style={styles.appName}>LinkB Downloader</Text>
+            <Text style={styles.tagline}>Download any video, anywhere</Text>
+          </View>
         </View>
         {isPremium ? (
           <View style={styles.premiumBadge}>
@@ -914,7 +918,13 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingTop: 8,
   },
-  appName: { color: C.text, fontSize: 26, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  appName: { color: C.text, fontSize: 22, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
   tagline: { color: C.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
   premiumBadge: {
     flexDirection: "row", alignItems: "center", gap: 5,

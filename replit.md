@@ -1,8 +1,8 @@
-# LinkDrop Workspace
+# LinkB Downloader Workspace
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. LinkDrop is a mobile-first universal video downloader and sharing app.
+pnpm workspace monorepo using TypeScript. LinkB Downloader is a mobile-first universal video downloader app. Supports YouTube, Instagram, TikTok, Facebook, Twitter, Vimeo, and 2000+ sites via yt-dlp.
 
 ## Stack
 
@@ -25,7 +25,7 @@ pnpm workspace monorepo using TypeScript. LinkDrop is a mobile-first universal v
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
 │   ├── api-server/         # Express API server
-│   └── reelvault/          # Expo React Native mobile app
+│   └── reelvault/          # Expo React Native mobile app (branded as LinkB Downloader)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
@@ -38,79 +38,87 @@ artifacts-monorepo/
 └── package.json
 ```
 
-## LinkDrop App Features
+## App Identity
+
+- **App Name**: LinkB Downloader
+- **Short Name**: LinkB
+- **Slug**: linkb-downloader
+- **Scheme**: linkbdownloader
+- **Logo**: `artifacts/reelvault/components/LinkBLogo.tsx` (SVG, blue gradient + download arrow)
+- **Icon**: `artifacts/reelvault/assets/images/icon.png` (512×512 programmatically generated)
+
+## Features
 
 ### Core Features
 - Paste/share any video URL (YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo, etc.)
 - Fetch video metadata (title, thumbnail, duration, uploader)
-- Show available download qualities (Audio Only, 144p-1080p)
+- Show available download qualities (Audio Only, 144p–2160p)
 - One-click download for each quality
-- Download history (localStorage/AsyncStorage)
-- Built-in video preview (opens in browser)
+- Download history (AsyncStorage)
+- Built-in video preview/play
 - Share and copy link buttons
 
+### Navigation
+- 3 tabs: Download, History, Premium (Browser tab removed)
+
 ### Advanced Features
-- PWA Share Target — app appears in Android/iOS share menu; receives shared URL/text and auto-fetches
-- Smart Share button — shows "Share File" (green) when a file is downloaded, shares actual file via Web Share API / expo-sharing
-- Auto progress bar during download (real content-length tracking or smooth fake progress)
+- PWA Share Target — app appears in Android/iOS share menu
+- Smart Share button — shares actual file when downloaded
+- Auto progress bar during download
 - AI Caption generator + Hashtag suggestions
-- Video trim (redirects to browser)
 - Audio-only download option
-- Disclaimer: "Use for personal and permitted content only" shown in results and empty state
 
 ### Premium / Monetization
-- UPI payment: winuptournament@fam (₹99 lifetime)
-- Premium unlocks: HD (1080p+) downloads, no watermark, unlimited history
-- Free users: up to 720p, downloads watermarked via ffmpeg
+- UPI payment: `winuptournament@fam` (₹99 lifetime)
+- Premium unlocks: HD (1080p, 1440p, 4K) downloads
+- Free users: up to 720p (inclusive)
 - UTR verification flow for manual payment confirmation
-- Premium stored in AsyncStorage
+- Premium state stored in AsyncStorage under `@reelvault:premium`
 
 ### Download Optimization
 - `--concurrent-fragments 4` and `--buffer-size 16K` on all yt-dlp calls
-- Extended format fallback chain for better compatibility across platforms
+- Extended format fallback chain for YouTube
+- Fragmented mp4 (fMP4) output via `ffmpeg:-movflags frag_keyframes+empty_moov+default_base_moof` — enables muxing video+audio to stdout without seekable output
+- `--hls-prefer-native` and `--format-sort +proto:dash` to prefer DASH over HLS for YouTube (HLS+HLS merging to stdout fails)
 - Server-side yt-dlp + ffmpeg with retry + user-agent rotation
 
 ### Security
 - URL validation (HTTP/HTTPS only)
 - Rate limiting: 30 req/min per IP
 - Server-side yt-dlp processing
-- Watermark added to free downloads
+- HD quality gated server-side (403 if not premium)
 
 ## API Endpoints
 
-- `POST /api/video/info` — Fetch video metadata (title, thumbnail, formats)
-- `POST /api/video/download` — Get download URL for specific format
+- `POST /api/video/preview` — Quick metadata fetch (title, thumbnail, duration, uploader)
+- `POST /api/video/info` — Full format listing with quality options
+- `GET /api/video/play` — Stream pre-muxed video for in-app playback
+- `GET /api/video/stream` — Download endpoint (free: ≤720p, premium: ≤4K)
+- `GET /api/video/update` — Trigger yt-dlp self-update
+- `GET /api/video/status` — Server health + yt-dlp version
+
+## Error Codes
+
+| Code | Meaning |
+|------|---------|
+| `INVALID_URL` | Not a valid HTTP/HTTPS URL |
+| `UNSUPPORTED_URL` | Site not supported by yt-dlp |
+| `PRIVATE_VIDEO` | Video is private or removed |
+| `GEO_BLOCKED` | Geo-restricted content |
+| `FORMAT_UNAVAILABLE` | Requested format not available |
+| `PREMIUM_REQUIRED` | HD format requires premium |
+| `SERVICE_UNAVAILABLE` | yt-dlp failed (auth required, etc.) |
+| `RATE_LIMIT` | Too many requests (30/min) |
 
 ## Theme
 
 - Dark theme: background `#0A0A0F`, accent `#3B82F6` (electric blue), gold `#F59E0B`
 - Font: Inter (400, 500, 600, 700)
 
-## Packages
+## Storage Keys (AsyncStorage)
 
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes:
-- `src/routes/health.ts` — GET /api/healthz
-- `src/routes/video.ts` — POST /api/video/info, POST /api/video/download
-
-### `artifacts/reelvault` (`@workspace/reelvault`)
-
-Expo React Native app. Screens:
-- `app/(tabs)/index.tsx` — Download screen (main), supports `autoUrl` param from browser tab
-- `app/(tabs)/browser.tsx` — In-app browser (WebView native, iframe web) with "Download this video" button
-- `app/(tabs)/history.tsx` — Download history with re-download support
-- `app/(tabs)/premium.tsx` — Premium/UPI payment + Watch Ad placeholder
-
-Context:
-- `context/AppContext.tsx` — isPremium, history, addToHistory, clearHistory
-
-Hooks:
-- `hooks/useVideoApi.ts` — fetchPreview, fetchVideoInfo, getPlayUrl, getStreamUrl
-
-Quality lock:
-- Free: Audio Only, up to 720p (inclusive)
-- Premium: 1080p, 1440p, 4K
+- `@reelvault:premium` — premium status
+- `@reelvault:history` — download history
 
 ## Running
 
@@ -122,8 +130,8 @@ pnpm --filter @workspace/api-server run dev
 pnpm --filter @workspace/reelvault run dev
 ```
 
-## Codegen
+## Known Limitations
 
-```bash
-pnpm --filter @workspace/api-spec run codegen
-```
+- Reddit: requires account cookies (SERVICE_UNAVAILABLE expected)
+- Vimeo: OAuth token issues in server environments (platform limitation)
+- Instagram/TikTok: auth-gated content requires cookies
