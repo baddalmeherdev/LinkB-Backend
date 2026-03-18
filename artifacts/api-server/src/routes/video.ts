@@ -355,8 +355,14 @@ router.get("/status", async (_req: Request, res: Response) => {
 const BASE_YTDLP_ARGS = [
   "--no-warnings", "--no-playlist",
   "--no-check-certificate",
-  "--concurrent-fragments", "4",
-  "--buffer-size", "16K",
+  "--concurrent-fragments", "16",
+  "--buffer-size", "1M",
+  "--http-chunk-size", "10M",
+  "--retries", "10",
+  "--fragment-retries", "10",
+  "--socket-timeout", "60",
+  "--extractor-retries", "5",
+  "--format-sort", "res,fps,codec:avc:m4a,size,br,asr",
 ];
 
 async function runProcess(args: string[], bin: string): Promise<void> {
@@ -375,17 +381,24 @@ async function runProcess(args: string[], bin: string): Promise<void> {
 }
 
 async function addWatermark(inputPath: string, outputPath: string): Promise<void> {
-  const watermarkText = "LinkB Free  |  linkb.app";
+  const watermarkText = "LinkB Downloader";
+
+  // Two-layer watermark: a small rounded badge in the bottom-right corner.
+  // Layer 1: semi-transparent dark background box
+  // Layer 2: white text on top of it
   const drawtext =
-    `drawtext=text='${watermarkText}':fontsize=22:fontcolor=white@0.70:` +
-    `x=w-tw-18:y=h-th-18:` +
-    `box=1:boxcolor=black@0.45:boxborderw=6`;
+    `drawtext=text='  ${watermarkText}  ':` +
+    `fontsize=18:fontcolor=white@0.90:` +
+    `x=w-tw-14:y=h-th-14:` +
+    `box=1:boxcolor=0x1A3A6A@0.75:boxborderw=8:` +
+    `font=monospace`;
 
   await runProcess([
     "-y", "-i", inputPath,
     "-vf", drawtext,
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
     "-c:a", "copy",
+    "-movflags", "+faststart",
     outputPath,
   ], "ffmpeg");
 }

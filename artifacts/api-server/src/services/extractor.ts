@@ -14,11 +14,14 @@ export const FFMPEG = "ffmpeg";
 const BASE_ARGS = [
   "--no-warnings",
   "--no-playlist",
-  "--socket-timeout", "30",
-  "--extractor-retries", "3",
+  "--socket-timeout", "60",
+  "--extractor-retries", "5",
   "--no-check-certificate",
-  "--concurrent-fragments", "4",
-  "--buffer-size", "16K",
+  "--concurrent-fragments", "16",
+  "--buffer-size", "1M",
+  "--http-chunk-size", "10M",
+  "--retries", "10",
+  "--fragment-retries", "10",
 ];
 
 // Rotate user agents on retry to avoid rate-limiting
@@ -152,9 +155,50 @@ const PLATFORM_FALLBACKS: Record<string, Array<{ name: string; extraArgs: string
       name: "instagram-embed",
       extraArgs: [
         "--add-header", "Referer:https://www.instagram.com/",
+        "--add-header", "X-IG-App-ID:936619743392459",
+      ],
+    },
+    {
+      name: "instagram-mobile",
+      extraArgs: [
+        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "--add-header", "Referer:https://www.instagram.com/",
       ],
     },
     { name: "instagram-bare", extraArgs: [] },
+  ],
+  twitter: [
+    {
+      name: "twitter-api",
+      extraArgs: [
+        "--add-header", "Referer:https://twitter.com/",
+      ],
+    },
+    { name: "twitter-bare", extraArgs: [] },
+  ],
+  facebook: [
+    {
+      name: "facebook-mobile",
+      extraArgs: [
+        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "--add-header", "Referer:https://m.facebook.com/",
+      ],
+    },
+    { name: "facebook-bare", extraArgs: [] },
+  ],
+  youtube: [
+    {
+      name: "youtube-android",
+      extraArgs: [
+        "--extractor-args", "youtube:player_client=android",
+      ],
+    },
+    {
+      name: "youtube-web",
+      extraArgs: [
+        "--extractor-args", "youtube:player_client=web",
+      ],
+    },
   ],
 };
 
@@ -168,7 +212,8 @@ function getPlatformKey(url: string): string {
   if (/tiktok\.com|vm\.tiktok\.com/.test(url)) return "tiktok";
   if (/instagram\.com/.test(url)) return "instagram";
   if (/twitter\.com|x\.com/.test(url)) return "twitter";
-  if (/facebook\.com|fb\.watch/.test(url)) return "facebook";
+  if (/facebook\.com|fb\.watch|m\.facebook\.com/.test(url)) return "facebook";
+  if (/youtube\.com|youtu\.be/.test(url)) return "youtube";
   return "generic";
 }
 
@@ -335,6 +380,7 @@ function qualityLabel(height: number): string {
 // ---- Playback URL resolution ----------------------------------------------
 
 const PLAY_FORMAT_CHAIN = [
+  "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[ext=mp4][height<=1080]/best[height<=1080]",
   "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best[height<=720]",
   "best[ext=mp4][height<=480]/best[height<=480]",
   "best[ext=mp4]/best",
