@@ -1,14 +1,7 @@
-import {
-  useFonts,
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-} from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -25,42 +18,39 @@ function injectWebFonts() {
   if (typeof document === "undefined") return;
   if (document.getElementById("linkdrop-fonts")) return;
 
-  const link = document.createElement("link");
-  link.id = "linkdrop-fonts-cdn";
-  link.rel = "stylesheet";
-  link.href =
-    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
-  document.head.appendChild(link);
-
   const style = document.createElement("style");
   style.id = "linkdrop-fonts";
   style.textContent = `
     @font-face {
       font-family: 'Inter_400Regular';
-      src: local('Inter Regular'), local('Inter'), local('Inter-Regular');
+      src: local('Inter'), local('Roboto'), local('Helvetica Neue'), local('Arial');
       font-weight: 400;
       font-style: normal;
+      font-display: swap;
     }
     @font-face {
       font-family: 'Inter_500Medium';
-      src: local('Inter Medium'), local('Inter'), local('Inter-Medium');
+      src: local('Inter Medium'), local('Inter'), local('Roboto Medium'), local('Roboto'), local('Arial');
       font-weight: 500;
       font-style: normal;
+      font-display: swap;
     }
     @font-face {
       font-family: 'Inter_600SemiBold';
-      src: local('Inter SemiBold'), local('Inter'), local('Inter-SemiBold');
+      src: local('Inter SemiBold'), local('Inter'), local('Roboto Medium'), local('Roboto'), local('Arial');
       font-weight: 600;
       font-style: normal;
+      font-display: swap;
     }
     @font-face {
       font-family: 'Inter_700Bold';
-      src: local('Inter Bold'), local('Inter'), local('Inter-Bold');
+      src: local('Inter Bold'), local('Inter'), local('Roboto Bold'), local('Roboto'), local('Arial');
       font-weight: 700;
       font-style: normal;
+      font-display: swap;
     }
     * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-    body { background-color: #0A0A0F; }
+    body { background-color: #0A0A0F; font-family: Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; }
   `;
   document.head.appendChild(style);
 }
@@ -80,24 +70,41 @@ function RootLayoutNav() {
 }
 
 function NativeLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
+  const [ready, setReady] = useState(false);
 
-  // Hide splash screen once fonts are ready (or if they error).
-  // We do NOT block rendering RootLayoutNav — the navigator must mount
-  // immediately so Expo Router's 6000 ms ready-timeout is never triggered.
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [fontsLoaded, fontError]);
+    let cancelled = false;
 
-  // Always render the navigator right away. The splash screen keeps the UI
-  // hidden on native until hideAsync() is called above.
+    async function loadFonts() {
+      try {
+        const ExpoFont = await import("expo-font");
+        const {
+          Inter_400Regular,
+          Inter_500Medium,
+          Inter_600SemiBold,
+          Inter_700Bold,
+        } = await import("@expo-google-fonts/inter");
+
+        await ExpoFont.loadAsync({
+          Inter_400Regular,
+          Inter_500Medium,
+          Inter_600SemiBold,
+          Inter_700Bold,
+        });
+      } catch (e) {
+        console.warn("[fonts] Load failed, using system font:", e);
+      } finally {
+        if (!cancelled) {
+          setReady(true);
+          SplashScreen.hideAsync().catch(() => {});
+        }
+      }
+    }
+
+    loadFonts();
+    return () => { cancelled = true; };
+  }, []);
+
   return <RootLayoutNav />;
 }
 
