@@ -100,9 +100,11 @@ export async function extractInfo(url: string, handler?: HandlerConfig): Promise
     try {
       const { stdout } = await execFileAsync(YTDLP, [
         ...BASE_ARGS,
+        "--user-agent", ua,
+        // Handler extraArgs come AFTER the generic UA so platform-specific
+        // --user-agent flags (e.g. Instagram mobile UA) take precedence.
         ...extraArgs,
         "--dump-json",
-        "--user-agent", ua,
         url,
       ], { timeout: 60000, maxBuffer: 50 * 1024 * 1024 });
 
@@ -292,12 +294,18 @@ export async function extractInfoRobust(
   url: string,
   handler: HandlerConfig,
 ): Promise<RobustResult> {
+  // Apply platform-specific URL transform before any extraction attempt
+  const effectiveUrl = handler.urlTransform ? handler.urlTransform(url) : url;
+  if (effectiveUrl !== url) {
+    console.log(`[extractor] urlTransform applied: ${url} → ${effectiveUrl}`);
+  }
+
   let retries = 0;
   let lastError: Error = new Error("Extraction failed");
 
   // Strategy 1: Primary handler (already retries across 3 user-agents)
   try {
-    const info = await extractInfo(url, handler);
+    const info = await extractInfo(effectiveUrl, handler);
     return { info, strategy: "primary", retries };
   } catch (err) {
     lastError = err instanceof Error ? err : new Error(String(err));
@@ -307,12 +315,12 @@ export async function extractInfoRobust(
   retries++;
 
   // Strategy 2: Platform-specific fallbacks
-  const platformKey = getPlatformKey(url);
+  const platformKey = getPlatformKey(effectiveUrl);
   const platformFallbacks = PLATFORM_FALLBACKS[platformKey] ?? [];
 
   for (const fallback of platformFallbacks) {
     try {
-      const info = await extractInfo(url, { extraArgs: fallback.extraArgs });
+      const info = await extractInfo(effectiveUrl, { extraArgs: fallback.extraArgs });
       return { info, strategy: fallback.name, retries };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -324,7 +332,7 @@ export async function extractInfoRobust(
   // Strategy 3: Generic fallbacks (bestvideo+bestaudio → best → worst format chains)
   for (const fallback of GENERIC_FALLBACKS) {
     try {
-      const info = await extractInfo(url, { extraArgs: fallback.extraArgs });
+      const info = await extractInfo(effectiveUrl, { extraArgs: fallback.extraArgs });
       return { info, strategy: fallback.name, retries };
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -509,17 +517,18 @@ const PLAY_FORMAT_CHAIN = [
 export async function resolvePlaybackUrl(url: string, handler?: HandlerConfig): Promise<string> {
   const extraArgs = handler?.extraArgs ?? [];
   const formatChain = handler?.preferredFormats ?? PLAY_FORMAT_CHAIN;
+  const effectiveUrl = handler?.urlTransform ? handler.urlTransform(url) : url;
 
   for (const fmt of formatChain) {
     for (const ua of USER_AGENTS.slice(0, 2)) {
       try {
         const { stdout } = await execFileAsync(YTDLP, [
           ...BASE_ARGS,
+          "--user-agent", ua,
           ...extraArgs,
           "-f", fmt,
           "--get-url",
-          "--user-agent", ua,
-          url,
+          effectiveUrl,
         ], { timeout: 35000 });
 
         const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));

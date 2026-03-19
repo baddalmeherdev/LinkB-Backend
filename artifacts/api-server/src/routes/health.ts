@@ -8,4 +8,10 @@ router.get("/healthz", (_req, res) => {
   res.json(data);
 });
 
+// UptimeRobot keep-alive endpoint
+// Monitor this URL every 5 minutes: GET /api/ping
+router.get("/ping", (_req, res) => {
+  res.json({ status: 200, message: "pong" });
+});
+
 export default router;

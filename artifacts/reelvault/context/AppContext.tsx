@@ -45,6 +45,7 @@ type AppContextType = {
   isPremium: boolean;
   premiumExpiry: number | null;
   unlockPremium: () => void;
+  unlockPremiumOnce: () => Promise<void>;
   history: DownloadHistoryItem[];
   addToHistory: (item: Omit<DownloadHistoryItem, "id" | "downloadedAt">) => void;
   clearHistory: () => void;
@@ -57,6 +58,7 @@ const PREMIUM_EXPIRY_KEY = "@reelvault:premium_expiry";
 const HISTORY_KEY = "@reelvault:history";
 
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isPremium, setIsPremium] = useState(false);
@@ -99,6 +101,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(PREMIUM_EXPIRY_KEY, expiry.toString());
   }, []);
 
+  // Grants 24 hours of Premium — triggered by watching a rewarded ad.
+  const unlockPremiumOnce = useCallback(async () => {
+    const expiry = Date.now() + ONE_DAY_MS;
+    setIsPremium(true);
+    setPremiumExpiry(expiry);
+    await AsyncStorage.setItem(PREMIUM_EXPIRY_KEY, expiry.toString());
+  }, []);
+
   const addToHistory = useCallback(
     async (item: Omit<DownloadHistoryItem, "id" | "downloadedAt">) => {
       const newItem: DownloadHistoryItem = {
@@ -130,7 +140,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppContext.Provider
-      value={{ isPremium, premiumExpiry, unlockPremium, history, addToHistory, clearHistory, removeFromHistory }}
+      value={{ isPremium, premiumExpiry, unlockPremium, unlockPremiumOnce, history, addToHistory, clearHistory, removeFromHistory }}
     >
       {children}
     </AppContext.Provider>

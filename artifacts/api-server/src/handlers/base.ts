@@ -11,6 +11,10 @@ export interface HandlerConfig {
 
   // Override the download format string for this platform
   downloadFormatOverride?: (formatId: string, isAudio: boolean) => string;
+
+  // Optional: transform the URL before passing it to yt-dlp
+  // (e.g. Instagram: rewrite /p/ and /tv/ to /reel/ for better extraction)
+  urlTransform?: (url: string) => string;
 }
 
 export interface PlatformHandler {

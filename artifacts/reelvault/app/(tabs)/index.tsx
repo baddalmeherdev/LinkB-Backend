@@ -31,6 +31,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinkPreviewCard, type PreviewData } from "@/components/LinkPreviewCard";
+import { AdBanner } from "@/components/AdBanner";
 import { PremiumModal } from "@/components/PremiumModal";
 import { QualityRow } from "@/components/QualityRow";
 import { VideoInfoSkeleton } from "@/components/SkeletonLoader";
@@ -1136,6 +1137,14 @@ export default function DownloadScreen() {
         ) : null}
       </ScrollView>
 
+      {/* Footer branding + banner ad — pinned below scroll content */}
+      {!isPremium && (
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom }]}>
+          <Text style={styles.footerCredit}>by @baddalmeher</Text>
+          <AdBanner />
+        </View>
+      )}
+
       <PremiumModal visible={showPremiumModal} onClose={() => setShowPremiumModal(false)} />
 
       {/* Download Progress Overlay */}
@@ -1567,5 +1576,19 @@ const styles = StyleSheet.create({
   },
   videoLoadingText: {
     color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium",
+  },
+  bottomBar: {
+    backgroundColor: C.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.surfaceBorder,
+    alignItems: "center",
+    paddingTop: 4,
+  },
+  footerCredit: {
+    color: "#888888",
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    paddingBottom: 2,
   },
 });

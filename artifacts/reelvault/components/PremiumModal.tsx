@@ -2,6 +2,7 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Modal,
@@ -16,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
+import { showRewardedAd } from "@/utils/unityAds";
 
 const C = Colors.dark;
 const UPI_ID = "winuptournament@fam";
@@ -41,8 +43,9 @@ function isValidUTR(utr: string): boolean {
 
 export function PremiumModal({ visible, onClose }: Props) {
   const insets = useSafeAreaInsets();
-  const { unlockPremium } = useApp();
+  const { unlockPremium, unlockPremiumOnce } = useApp();
   const [step, setStep] = useState<"info" | "payment">("info");
+  const [adLoading, setAdLoading] = useState(false);
   const [utr, setUtr] = useState("");
   const [utrError, setUtrError] = useState("");
   const [utrFocused, setUtrFocused] = useState(false);
@@ -93,6 +96,29 @@ export function PremiumModal({ visible, onClose }: Props) {
     onClose();
   };
 
+  const handleWatchAd = async () => {
+    if (adLoading) return;
+    setAdLoading(true);
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const earned = await showRewardedAd();
+      if (earned) {
+        await unlockPremiumOnce();
+        handleClose();
+        Alert.alert(
+          "🎉 Premium Unlocked!",
+          "You've earned 24 hours of free Premium access. Enjoy HD downloads, trimming, and more!"
+        );
+      } else {
+        Alert.alert("Ad Skipped", "Watch the full ad to earn free Premium access.");
+      }
+    } catch {
+      Alert.alert("Error", "Could not load the ad. Please try again.");
+    } finally {
+      setAdLoading(false);
+    }
+  };
+
   return (
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
       <View style={styles.overlay}>
@@ -141,6 +167,23 @@ export function PremiumModal({ visible, onClose }: Props) {
               >
                 <MaterialCommunityIcons name="contactless-payment" size={20} color="#000" />
                 <Text style={styles.payBtnText}>Pay ₹29/month via UPI</Text>
+              </Pressable>
+
+              <Text style={styles.orDivider}>— OR —</Text>
+
+              <Pressable
+                style={({ pressed }) => [styles.watchAdBtn, { opacity: (pressed || adLoading) ? 0.7 : 1 }]}
+                onPress={handleWatchAd}
+                disabled={adLoading}
+              >
+                {adLoading ? (
+                  <ActivityIndicator size="small" color={C.accent} />
+                ) : (
+                  <Feather name="play-circle" size={18} color={C.accent} />
+                )}
+                <Text style={styles.watchAdBtnText}>
+                  {adLoading ? "Loading Ad…" : "Watch Ad — Free 24h Access"}
+                </Text>
               </Pressable>
 
               <Text style={styles.upiNote}>UPI ID: {UPI_ID}</Text>
@@ -513,5 +556,30 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     fontSize: 14,
     fontFamily: "Inter_500Medium",
+  },
+  orDivider: {
+    color: C.textMuted,
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+    marginTop: 12,
+    marginBottom: 4,
+    letterSpacing: 1,
+  },
+  watchAdBtn: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: C.accent,
+    backgroundColor: "rgba(59,130,246,0.08)",
+  },
+  watchAdBtnText: {
+    color: C.accent,
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
   },
 });

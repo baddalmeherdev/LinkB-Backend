@@ -290,6 +290,7 @@ router.get("/stream", async (req: Request, res: Response) => {
 
   const handler = getHandler(url);
   const cfg = handler.getConfig();
+  const effectiveStreamUrl = cfg.urlTransform ? cfg.urlTransform(url) : url;
 
   const ytdlpFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
@@ -301,7 +302,7 @@ router.get("/stream", async (req: Request, res: Response) => {
 
   console.log(`[stream] handler=${handler.name} format=${ytdlpFormat} premium=${premiumUser}`);
   await streamViaTemp({
-    req, res, url, format: ytdlpFormat, ext,
+    req, res, url: effectiveStreamUrl, format: ytdlpFormat, ext,
     extraArgs: cfg.extraArgs,
     isPremium: premiumUser,
     isAudioOnly,
@@ -342,6 +343,7 @@ router.get("/direct", async (req: Request, res: Response) => {
 
   const handler = getHandler(url);
   const cfg = handler.getConfig();
+  const effectiveDirectUrl = cfg.urlTransform ? cfg.urlTransform(url) : url;
 
   const ytdlpPrimaryFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
@@ -370,7 +372,7 @@ router.get("/direct", async (req: Request, res: Response) => {
               ...cfg.extraArgs,
               "-f", fmt,
               "--get-url",
-              url,
+              effectiveDirectUrl,
             ], { stdio: ["ignore", "pipe", "pipe"] });
 
             let out = "";
@@ -444,6 +446,7 @@ router.get("/pipe", async (req: Request, res: Response) => {
 
   const handler = getHandler(url);
   const cfg = handler.getConfig();
+  const effectivePipeUrl = cfg.urlTransform ? cfg.urlTransform(url) : url;
 
   const ytdlpFormat = cfg.downloadFormatOverride
     ? cfg.downloadFormatOverride(formatId, isAudioOnly)
@@ -517,7 +520,7 @@ router.get("/pipe", async (req: Request, res: Response) => {
             ...cfg.extraArgs,
             "-f", fmt,
             "--get-url",
-            url,
+            effectivePipeUrl,
           ], { stdio: ["ignore", "pipe", "pipe"] });
 
           let out = "";
@@ -551,7 +554,7 @@ router.get("/pipe", async (req: Request, res: Response) => {
     res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
-    return streamViaTemp({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: premiumUser, isAudioOnly });
+    return streamViaTemp({ req, res, url: effectivePipeUrl, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: premiumUser, isAudioOnly });
   }
 
   try {
@@ -565,7 +568,7 @@ router.get("/pipe", async (req: Request, res: Response) => {
       res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
       res.flushHeaders();
     }
-    return streamViaTemp({ req, res, url, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: premiumUser, isAudioOnly });
+    return streamViaTemp({ req, res, url: effectivePipeUrl, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: premiumUser, isAudioOnly });
   }
 });
 
@@ -608,6 +611,7 @@ router.get("/trim", async (req: Request, res: Response) => {
 
   const handler = getHandler(url);
   const cfg = handler.getConfig();
+  const effectiveTrimUrl = cfg.urlTransform ? cfg.urlTransform(url) : url;
 
   const isFullSelector = formatId.includes("/") || formatId.includes("[") || formatId.includes("+");
   const ytdlpFormat = cfg.downloadFormatOverride
@@ -639,7 +643,7 @@ router.get("/trim", async (req: Request, res: Response) => {
         "-f", ytdlpFormat,
         "--merge-output-format", "mp4",
         "-o", tmpRaw,
-        url,
+        effectiveTrimUrl,
       ], { stdio: ["ignore", "pipe", "pipe"] });
 
       proc.stderr.on("data", (d: Buffer) => {
