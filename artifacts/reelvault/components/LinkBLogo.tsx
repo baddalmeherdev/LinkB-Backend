@@ -8,9 +8,7 @@ import Svg, {
   Rect,
   Path,
   Circle,
-  Polygon,
   Text as SvgText,
-  G,
 } from "react-native-svg";
 
 type Props = {
@@ -18,116 +16,146 @@ type Props = {
 };
 
 export function LinkBLogo({ size = 40 }: Props) {
-  const rx = size * 0.24;
+  const rx = size * 0.26;
 
   return (
     <View style={[styles.wrapper, { width: size, height: size, borderRadius: rx }]}>
       <Svg width={size} height={size} viewBox="0 0 100 100">
         <Defs>
-          {/* Deep dark background */}
-          <LinearGradient id="bg" x1="0" y1="0" x2="0.6" y2="1">
-            <Stop offset="0" stopColor="#050B1F" />
-            <Stop offset="0.5" stopColor="#0B1845" />
-            <Stop offset="1" stopColor="#0F2060" />
+          {/* Background — deep dark with rich blue-indigo tone */}
+          <LinearGradient id="rv_bg" x1="0.2" y1="0" x2="0.8" y2="1">
+            <Stop offset="0"   stopColor="#060C22" />
+            <Stop offset="0.45" stopColor="#0D1A4A" />
+            <Stop offset="1"   stopColor="#060C22" />
           </LinearGradient>
 
-          {/* Electric blue gradient for accents */}
-          <LinearGradient id="blue_h" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor="#1A56DB" />
+          {/* Blue for ring and arrow — electric, eye-catching */}
+          <LinearGradient id="rv_blue_h" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0"   stopColor="#1D4FD8" />
             <Stop offset="0.5" stopColor="#3B82F6" />
-            <Stop offset="1" stopColor="#60A5FA" />
+            <Stop offset="1"   stopColor="#60A5FA" />
           </LinearGradient>
 
-          {/* Blue vertical for arrow */}
-          <LinearGradient id="blue_v" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#60A5FA" />
-            <Stop offset="1" stopColor="#1A56DB" />
+          {/* Blue for shaft — top to bottom */}
+          <LinearGradient id="rv_blue_v" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0"   stopColor="#93C5FD" />
+            <Stop offset="1"   stopColor="#1D4FD8" />
           </LinearGradient>
 
-          {/* White-to-blue for LB letters */}
-          <LinearGradient id="letter_grad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#FFFFFF" />
-            <Stop offset="0.6" stopColor="#E0EDFF" />
-            <Stop offset="1" stopColor="#93C5FD" />
+          {/* Gold badge */}
+          <LinearGradient id="rv_gold" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#FBBF24" />
+            <Stop offset="1" stopColor="#D97706" />
           </LinearGradient>
 
-          {/* Gold gradient */}
-          <LinearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor="#FDE68A" />
-            <Stop offset="1" stopColor="#F59E0B" />
+          {/* "LB" letter fill — bright white fading to ice blue */}
+          <LinearGradient id="rv_text" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0"   stopColor="#FFFFFF" />
+            <Stop offset="0.7" stopColor="#DBEAFE" />
+            <Stop offset="1"   stopColor="#93C5FD" />
           </LinearGradient>
 
-          {/* Glass shine top */}
-          <LinearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.10" />
+          {/* Top glass gloss */}
+          <LinearGradient id="rv_shine" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.09" />
             <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
           </LinearGradient>
 
-          {/* Center radial glow */}
-          <RadialGradient id="glow" cx="50%" cy="48%" r="50%">
-            <Stop offset="0" stopColor="#2563EB" stopOpacity="0.25" />
-            <Stop offset="1" stopColor="#1E3A8A" stopOpacity="0" />
-          </RadialGradient>
-
-          {/* Download arrow glow */}
-          <RadialGradient id="arrowglow" cx="50%" cy="65%" r="35%">
-            <Stop offset="0" stopColor="#3B82F6" stopOpacity="0.4" />
+          {/* Central radial glow */}
+          <RadialGradient id="rv_glow" cx="50%" cy="42%" r="48%">
+            <Stop offset="0" stopColor="#3B82F6" stopOpacity="0.28" />
             <Stop offset="1" stopColor="#1E3A8A" stopOpacity="0" />
           </RadialGradient>
         </Defs>
 
         {/* ── Background ── */}
-        <Rect x="0" y="0" width="100" height="100" rx="24" fill="url(#bg)" />
+        <Rect x="0" y="0" width="100" height="100" rx="26" fill="url(#rv_bg)" />
 
-        {/* ── Glow layers ── */}
-        <Rect x="0" y="0" width="100" height="100" rx="24" fill="url(#glow)" />
-        <Rect x="0" y="0" width="100" height="100" rx="24" fill="url(#arrowglow)" />
+        {/* ── Central glow ── */}
+        <Rect x="0" y="0" width="100" height="100" rx="26" fill="url(#rv_glow)" />
 
-        {/* ── Glass shine on top half ── */}
-        <Rect x="0" y="0" width="100" height="52" rx="24" fill="url(#shine)" />
+        {/* ── Top glass shine ── */}
+        <Rect x="0" y="0" width="100" height="50" rx="26" fill="url(#rv_shine)" />
 
-        {/* ── Inner border glow ── */}
+        {/* ── Outer border glow ── */}
         <Rect
-          x="1.5" y="1.5" width="97" height="97" rx="22.5"
+          x="1.5" y="1.5" width="97" height="97" rx="24.5"
           fill="none"
-          stroke="url(#blue_h)"
-          strokeWidth="1.2"
-          strokeOpacity="0.25"
+          stroke="url(#rv_blue_h)"
+          strokeWidth="1.5"
+          strokeOpacity="0.3"
         />
 
-        {/* ── Top accent bar ── */}
-        <Rect x="16" y="10" width="55" height="2.5" rx="1.25" fill="url(#blue_h)" opacity="0.9" />
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+             DOWNLOAD RING ICON  (center: 50, 38)
+             Partial circle arc — 300° open at bottom
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {/*
+          Circle center (50, 38), radius 21.
+          Gap at bottom (6 o'clock).
+          Arc from 120° to 60° going clockwise (the long way = 300°).
+          At 120°: x=50+21*cos(120°)=50-10.5=39.5,  y=38+21*sin(120°)=38+18.2=56.2
+          At  60°: x=50+21*cos(60°) =50+10.5=60.5,  y=56.2
+          SVG arc: M 39.5 56.2 A 21 21 0 1 1 60.5 56.2
+          (large-arc=1, sweep=1 = clockwise)
+        */}
+        <Path
+          d="M 39.5 56.2 A 21 21 0 1 1 60.5 56.2"
+          fill="none"
+          stroke="url(#rv_blue_h)"
+          strokeWidth="4.5"
+          strokeLinecap="round"
+        />
 
-        {/* ── Gold premium dot ── */}
-        <Circle cx="85" cy="11" r="4.5" fill="url(#gold)" />
+        {/* ── Arrow shaft — runs top-to-bottom through the ring ── */}
+        <Rect
+          x="47.5" y="17" width="5" height="47" rx="2.5"
+          fill="url(#rv_blue_v)"
+        />
 
-        {/* ══ "LB" Monogram ══ */}
+        {/* ── Arrowhead — bold, clean downward chevron ── */}
+        <Path
+          d="M 39 58 L 50 71 L 61 58"
+          fill="url(#rv_blue_h)"
+        />
+
+        {/* ── Tray bar ── */}
+        <Rect
+          x="34" y="74" width="32" height="5" rx="2.5"
+          fill="url(#rv_blue_h)"
+        />
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+             "LB" label at bottom
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         <SvgText
           x="50"
-          y="53"
-          fontSize="46"
-          fontWeight="900"
-          fill="url(#letter_grad)"
+          y="96"
+          fontSize="15"
+          fontWeight="800"
+          fill="url(#rv_text)"
           textAnchor="middle"
-          fontFamily="Arial, Helvetica, sans-serif"
-          letterSpacing="-2.5"
+          fontFamily="Arial Black, Arial, Helvetica, sans-serif"
+          letterSpacing="4"
         >
           LB
         </SvgText>
 
-        {/* ══ Download Arrow beneath LB ══ */}
-        {/* Arrow stem (vertical line) */}
-        <Rect x="47.5" y="58" width="5" height="14" rx="2.5" fill="url(#blue_v)" />
-        {/* Arrow head (downward pointing triangle) */}
-        <Polygon
-          points="37,70 50,83 63,70"
-          fill="url(#blue_h)"
+        {/* ── Gold premium badge (top-right) ── */}
+        {/* Diamond shape: 4-point rotated square */}
+        <Path
+          d="M 85 7 L 91 13 L 85 19 L 79 13 Z"
+          fill="url(#rv_gold)"
         />
-        {/* Download tray / base bar */}
-        <Rect x="32" y="86" width="36" height="4.5" rx="2.25" fill="url(#blue_h)" opacity="0.95" />
+        {/* Tiny star/sparkle inside the diamond */}
+        <Path
+          d="M 85 10 L 86 13 L 85 16 L 84 13 Z"
+          fill="#FFF8E7"
+          opacity="0.7"
+        />
 
-        {/* ── Bottom subtle line ── */}
-        <Rect x="16" y="93" width="28" height="1.5" rx="0.75" fill="url(#blue_h)" opacity="0.25" />
+        {/* ── Top-left accent dot ── */}
+        <Circle cx="12" cy="12" r="2.5" fill="url(#rv_blue_h)" opacity="0.6" />
       </Svg>
     </View>
   );
