@@ -107,7 +107,7 @@ export function PremiumModal({ visible, onClose }: Props) {
         handleClose();
         Alert.alert(
           "🎉 Premium Unlocked!",
-          "You've earned 24 hours of free Premium access. Enjoy HD downloads, trimming, and more!"
+          "You've unlocked Premium access. Enjoy HD downloads, trimming, and more!"
         );
       } else {
         Alert.alert("Ad Skipped", "Watch the full ad to earn free Premium access.");
