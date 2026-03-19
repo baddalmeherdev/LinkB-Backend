@@ -352,13 +352,23 @@ router.get("/direct", async (req: Request, res: Response) => {
   console.log(`[direct] handler=${handler.name} format=${ytdlpPrimaryFormat}`);
 
   // Format fallback chain for direct URL resolution
-  const directFormatChain = [
-    ytdlpPrimaryFormat,
-    isAudioOnly ? "bestaudio" : "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-    "best[ext=mp4]/best",
-    "best",
-  ];
-  const uniqueDirectChain = [...new Set(directFormatChain)];
+  // For /direct we ONLY use single-file formats (no bestvideo+bestaudio).
+  // yt-dlp --get-url on a combined format outputs TWO URLs (video + audio
+  // separately) which cannot be played by the client without merging.
+  // Single-file formats always produce exactly one URL.
+  const singleFileFormats = isAudioOnly
+    ? [
+        `${ytdlpPrimaryFormat}`,
+        "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio",
+        "bestaudio",
+      ]
+    : [
+        "best[ext=mp4]",
+        "best[ext=webm]",
+        "best",
+        "worst",
+      ];
+  const uniqueDirectChain = [...new Set(singleFileFormats)];
 
   const { result, errInfo, usedHeartbeat } = await withHeartbeat(
     res,
@@ -389,9 +399,14 @@ router.get("/direct", async (req: Request, res: Response) => {
           });
 
           const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
-          if (lines[0]) {
+          // If more than 1 URL is returned, it's a split video+audio stream —
+          // cannot be played directly. Skip to the next single-file format.
+          if (lines.length === 1 && lines[0]) {
             console.log(`[direct] resolved OK with format: ${fmt}`);
             return { directUrl: lines[0], filename };
+          }
+          if (lines.length > 1) {
+            console.warn(`[direct] format "${fmt}" returned ${lines.length} URLs (needs merge), skipping...`);
           }
         } catch (err) {
           lastErr = err instanceof Error ? err : new Error(String(err));
@@ -485,9 +500,21 @@ router.get("/pipe", async (req: Request, res: Response) => {
     req.on("close", () => readable.destroy());
   };
 
-  // ─── Fast path: client already resolved CDN URL, skip yt-dlp entirely ───
+  // ─── Free users always go through streamViaTemp (watermark + audio merge) ──
+  // CDN proxy path skips server-side processing so watermark is never applied.
+  // Premium users may use CDN proxy for speed (no watermark needed).
+  if (!premiumUser && !isAudioOnly) {
+    console.log(`[pipe] free user — routing through streamViaTemp for watermark`);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    return streamViaTemp({ req, res, url: effectivePipeUrl, format: ytdlpFormat, ext, extraArgs: cfg.extraArgs, isPremium: false, isAudioOnly });
+  }
+
+  // ─── Premium fast path: client already resolved CDN URL ──────────────────
   if (preResolvedUrl && preResolvedUrl.startsWith("http")) {
-    console.log(`[pipe] using pre-resolved URL — skipping yt-dlp`);
+    console.log(`[pipe] premium — using pre-resolved URL`);
     try {
       await proxyCdnUrl(preResolvedUrl);
       console.log(`[pipe] pre-resolved stream OK`);
@@ -497,17 +524,14 @@ router.get("/pipe", async (req: Request, res: Response) => {
     }
   }
 
-  // ─── Normal path: resolve CDN URL via yt-dlp then proxy ─────────────────
+  // ─── Premium normal path: resolve CDN URL via yt-dlp then proxy ──────────
   console.log(`[pipe] handler=${handler.name} format=${ytdlpFormat}`);
 
-  // Format fallback chain for pipe URL resolution
-  const pipeFormatChain = [
-    ytdlpFormat,
-    isAudioOnly ? "bestaudio" : "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-    "best[ext=mp4]/best",
-    "best",
-  ];
-  const uniquePipeChain = [...new Set(pipeFormatChain)];
+  // Only single-file formats so the CDN URL has both video AND audio.
+  const pipeSingleFileChain = isAudioOnly
+    ? ["bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio", "bestaudio"]
+    : ["best[ext=mp4]", "best[ext=webm]", "best", "worst"];
+  const uniquePipeChain = [...new Set(pipeSingleFileChain)];
 
   let cdnUrl: string;
   try {
@@ -537,10 +561,14 @@ router.get("/pipe", async (req: Request, res: Response) => {
         });
 
         const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
-        if (lines[0]) {
+        // Skip combined formats that return 2 URLs (video + audio separate)
+        if (lines.length === 1 && lines[0]) {
           resolved = lines[0];
           console.log(`[pipe] CDN URL resolved with format: ${fmt}`);
           break;
+        }
+        if (lines.length > 1) {
+          console.warn(`[pipe] format "${fmt}" returned ${lines.length} URLs, skipping...`);
         }
       } catch {
         console.warn(`[pipe] format "${fmt}" failed, trying next...`);
@@ -549,7 +577,7 @@ router.get("/pipe", async (req: Request, res: Response) => {
     if (!resolved) throw new Error("No CDN URL resolved.");
     cdnUrl = resolved;
   } catch (err) {
-    console.error("[pipe] URL resolve failed:", err);
+    console.error("[pipe] URL resolve failed, falling back to streamViaTemp:", err);
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Type", isAudioOnly ? "audio/mpeg" : "video/mp4");
     res.setHeader("X-Accel-Buffering", "no");
@@ -558,7 +586,7 @@ router.get("/pipe", async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`[pipe] proxying from resolved CDN URL...`);
+    console.log(`[pipe] proxying from CDN URL...`);
     await proxyCdnUrl(cdnUrl);
     console.log(`[pipe] streaming OK`);
   } catch (err) {

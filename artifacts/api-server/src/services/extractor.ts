@@ -214,10 +214,27 @@ const PLATFORM_FALLBACKS: Record<string, Array<{ name: string; extraArgs: string
   ],
   facebook: [
     {
+      name: "facebook-api-v20",
+      extraArgs: [
+        "--extractor-args", "facebook:api_version=v20.0",
+        "--add-header", "Accept-Language:en-US,en;q=0.9",
+        "--format-sort", "res:2160,fps,vcodec:h264,acodec:aac,size",
+      ],
+    },
+    {
       name: "facebook-mobile",
       extraArgs: [
         "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
         "--add-header", "Referer:https://m.facebook.com/",
+        "--add-header", "Accept-Language:en-US,en;q=0.9",
+      ],
+    },
+    {
+      name: "facebook-desktop-all",
+      extraArgs: [
+        "--add-header", "Accept-Language:en-US,en;q=0.9",
+        "--add-header", "Referer:https://www.facebook.com/",
+        "--format-sort", "+res",
       ],
     },
     { name: "facebook-bare", extraArgs: [] },

@@ -181,21 +181,23 @@ export default function DownloadScreen() {
         if (info) {
           setVideoInfo(info);
           setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
-          // Background pre-resolve CDN URL for the best default quality (no spinner, silent)
+          // Pre-resolve CDN URL only for premium users (free users go through /stream for watermark)
           preResolvedRef.current = null;
-          const bestQ = info.qualities.find((q) => !q.isAudioOnly && (isPremium || !q.isHD))
-            ?? info.qualities.find((q) => !q.isAudioOnly);
-          if (bestQ) {
-            getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((res) => {
-              if (res) {
-                preResolvedRef.current = {
-                  formatId: bestQ.formatId,
-                  directUrl: res.directUrl,
-                  filename: res.filename,
-                  expires: Date.now() + 4 * 60 * 1000,
-                };
-              }
-            }).catch(() => {});
+          if (isPremium) {
+            const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
+              ?? info.qualities.find((q) => !q.isAudioOnly);
+            if (bestQ) {
+              getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((res) => {
+                if (res) {
+                  preResolvedRef.current = {
+                    formatId: bestQ.formatId,
+                    directUrl: res.directUrl,
+                    filename: res.filename,
+                    expires: Date.now() + 4 * 60 * 1000,
+                  };
+                }
+              }).catch(() => {});
+            }
           }
         }
       }, 700);
@@ -254,19 +256,22 @@ export default function DownloadScreen() {
       setVideoInfo(info);
       setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
       preResolvedRef.current = null;
-      const bestQ = info.qualities.find((q) => !q.isAudioOnly && (isPremium || !q.isHD))
-        ?? info.qualities.find((q) => !q.isAudioOnly);
-      if (bestQ) {
-        getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((r) => {
-          if (r) {
-            preResolvedRef.current = {
-              formatId: bestQ.formatId,
-              directUrl: r.directUrl,
-              filename: r.filename,
-              expires: Date.now() + 4 * 60 * 1000,
-            };
-          }
-        }).catch(() => {});
+      // Pre-resolve CDN URL only for premium users (free users use /stream for watermark)
+      if (isPremium) {
+        const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
+          ?? info.qualities.find((q) => !q.isAudioOnly);
+        if (bestQ) {
+          getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((r) => {
+            if (r) {
+              preResolvedRef.current = {
+                formatId: bestQ.formatId,
+                directUrl: r.directUrl,
+                filename: r.filename,
+                expires: Date.now() + 4 * 60 * 1000,
+              };
+            }
+          }).catch(() => {});
+        }
       }
     }
   }, [url, fetchPreview, fetchVideoInfo, clearError, isPremium]);
@@ -418,25 +423,34 @@ export default function DownloadScreen() {
         downloadAbortRef.current = null;
       }
     } else {
-      // ── NATIVE: direct CDN URL → expo-file-system (fastest, no server round-trip) ──
+      // ── NATIVE: download via server ───────────────────────────────────────
+      // Free users always use /stream (server merges audio + applies watermark).
+      // Premium users may use pre-resolved CDN URL for speed (no server round-trip).
       try {
-        // Use pre-resolved CDN URL if fresh cache exists for this quality,
-        // otherwise resolve now (~3-8s). If both fail, fall back to stream URL.
-        const cached = preResolvedRef.current;
-        let direct: { directUrl: string; filename: string } | null =
-          cached && cached.formatId === quality.formatId && cached.expires > Date.now()
-            ? { directUrl: cached.directUrl, filename: cached.filename }
-            : null;
+        let downloadUrl: string;
+        let filename: string;
 
-        if (!direct) {
-          direct = await getDirectDownloadUrl(
-            videoInfo.originalUrl, quality, videoInfo.title, isPremium
-          );
+        if (isPremium) {
+          const cached = preResolvedRef.current;
+          let direct: { directUrl: string; filename: string } | null =
+            cached && cached.formatId === quality.formatId && cached.expires > Date.now()
+              ? { directUrl: cached.directUrl, filename: cached.filename }
+              : null;
+
+          if (!direct) {
+            direct = await getDirectDownloadUrl(
+              videoInfo.originalUrl, quality, videoInfo.title, isPremium
+            );
+          }
+
+          downloadUrl = direct?.directUrl
+            ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+          filename = direct?.filename ?? fallbackFilename;
+        } else {
+          // Free users: always stream through server (watermark + audio merge guaranteed)
+          downloadUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+          filename = fallbackFilename;
         }
-
-        const downloadUrl = direct?.directUrl
-          ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
-        const filename = direct?.filename ?? fallbackFilename;
 
         const destPath = `${FileSystem.documentDirectory}${filename}`;
         const downloadResumable = FileSystem.createDownloadResumable(
