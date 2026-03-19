@@ -1,4 +1,5 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinkBLogo } from "@/components/LinkBLogo";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState, useMemo } from "react";
@@ -361,6 +362,9 @@ export default function PremiumScreen() {
         ]}
       >
         <View style={styles.heroSection}>
+          <View style={{ alignItems: "center", marginBottom: 10 }}>
+            <LinkBLogo size={64} />
+          </View>
           <View style={styles.crownCircle}>
             <MaterialCommunityIcons name="crown" size={48} color={C.gold} />
           </View>

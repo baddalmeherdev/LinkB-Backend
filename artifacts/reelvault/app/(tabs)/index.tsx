@@ -563,8 +563,15 @@ export default function DownloadScreen() {
           return;
         }
       }
-      // No file downloaded: share the URL
-      await Linking.openURL(videoInfo.originalUrl);
+      // No file downloaded: share the URL via native share sheet
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await (Sharing as any).shareAsync?.(videoInfo.originalUrl).catch(() =>
+          Linking.openURL(videoInfo.originalUrl)
+        );
+      } else {
+        await Linking.openURL(videoInfo.originalUrl);
+      }
       return;
     }
 

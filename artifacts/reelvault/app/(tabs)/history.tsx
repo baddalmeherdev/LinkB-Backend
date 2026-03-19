@@ -4,6 +4,7 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Sharing from "expo-sharing";
 import { useRouter } from "expo-router";
+import { LinkBLogo } from "@/components/LinkBLogo";
 import React, { useState } from "react";
 import {
   Alert,
@@ -211,7 +212,10 @@ export default function HistoryScreen() {
         end={{ x: 0, y: 0.3 }}
       />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>History</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <LinkBLogo size={38} />
+          <Text style={styles.headerTitle}>History</Text>
+        </View>
         {history.length > 0 ? (
           <Pressable onPress={handleClearAll} style={styles.clearBtn}>
             <Feather name="trash" size={16} color={C.error} />

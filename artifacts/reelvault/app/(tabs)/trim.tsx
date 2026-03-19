@@ -1,4 +1,5 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinkBLogo } from "@/components/LinkBLogo";
 import * as Haptics from "expo-haptics";
 import * as FileSystem from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
@@ -294,7 +295,7 @@ export default function TrimScreen() {
       />
 
       <View style={styles.header}>
-        <Feather name="scissors" size={22} color={C.gold} />
+        <LinkBLogo size={38} />
         <Text style={styles.headerTitle}>Video Trimmer</Text>
         <View style={styles.premiumBadge}>
           <MaterialCommunityIcons name="crown" size={12} color="#000" />
@@ -395,7 +396,7 @@ export default function TrimScreen() {
                 <View style={styles.timeInputGroup}>
                   <Text style={styles.timeLabel}>End Time</Text>
                   <View style={[styles.timeInputWrap, !!endError && styles.timeInputError]}>
-                    <Feather name="square" size={14} color={endError ? C.error : C.error} />
+                    <Feather name="square" size={14} color={endError ? C.error : C.success} />
                     <TextInput
                       style={styles.timeInput}
                       value={endTime}
