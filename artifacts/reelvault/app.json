@@ -46,6 +46,7 @@
           "android": {
             "minSdkVersion": 24,
             "enableProguardInReleaseBuilds": true,
+            "shrinkResources": true,
             "extraMavenRepos": [
               "https://maven.start.io/"
             ]

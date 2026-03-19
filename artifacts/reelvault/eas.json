@@ -8,7 +8,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://0c13d7dd-2060-4a6a-ba9f-948f780a60d8-00-1tii0u3lh1fa7.expo.sisko.replit.dev"
+        "EXPO_PUBLIC_API_URL": "https://linkb-backend-api.onrender.com"
       }
     },
     "production": {
@@ -16,7 +16,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://0c13d7dd-2060-4a6a-ba9f-948f780a60d8-00-1tii0u3lh1fa7.expo.sisko.replit.dev"
+        "EXPO_PUBLIC_API_URL": "https://linkb-backend-api.onrender.com"
       }
     }
   },

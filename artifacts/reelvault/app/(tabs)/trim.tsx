@@ -1,5 +1,6 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinkBLogo } from "@/components/LinkBLogo";
+import { showRewardedAd } from "@/utils/unityAds";
 import * as Haptics from "expo-haptics";
 import * as FileSystem from "expo-file-system";
 import { LinearGradient } from "expo-linear-gradient";
@@ -138,6 +139,12 @@ export default function TrimScreen() {
   const handleTrimDownload = async () => {
     if (!videoInfo || !selectedQuality) return;
     if (!validateTimes()) return;
+
+    const earned = await showRewardedAd();
+    if (!earned) {
+      Alert.alert("Ad Skipped", "Please watch the full ad to unlock the Trim feature.");
+      return;
+    }
 
     const startSec = parseTimeToSeconds(startTime);
     const endSec = parseTimeToSeconds(endTime);
