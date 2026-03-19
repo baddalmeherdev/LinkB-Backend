@@ -654,9 +654,19 @@ export default function DownloadScreen() {
           ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
           : "";
         const params = new URLSearchParams({ url: videoUrl });
-        const res = await fetch(`${BASE}/api/video/play?${params.toString()}`);
-        const text = await res.text();
-        const data = JSON.parse(text.trim()) as Record<string, unknown>;
+        const controller = new AbortController();
+        const playTimeout = setTimeout(() => controller.abort(), 60_000);
+        let data: Record<string, unknown> = {};
+        try {
+          const res = await fetch(`${BASE}/api/video/play?${params.toString()}`, {
+            signal: controller.signal,
+          });
+          clearTimeout(playTimeout);
+          const text = await res.text();
+          data = JSON.parse(text.trim()) as Record<string, unknown>;
+        } catch {
+          clearTimeout(playTimeout);
+        }
 
         if (typeof data.playUrl === "string" && data.playUrl.startsWith("http")) {
           setVideoModalUrl(data.playUrl);

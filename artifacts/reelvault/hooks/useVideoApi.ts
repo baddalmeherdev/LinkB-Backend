@@ -112,8 +112,8 @@ export function useVideoApi() {
     setIsSlowRequest(false);
     setError(null);
 
-    // Show "Processing, please wait…" after 5 seconds
-    const slowTimer = setTimeout(() => setIsSlowRequest(true), 5_000);
+    // Show "Processing, please wait…" after 3 seconds
+    const slowTimer = setTimeout(() => setIsSlowRequest(true), 3_000);
 
     try {
       const { ok, data } = await fetchWithRetry(
@@ -145,7 +145,7 @@ export function useVideoApi() {
     setIsSlowRequest(false);
     setError(null);
 
-    const slowTimer = setTimeout(() => setIsSlowRequest(true), 5_000);
+    const slowTimer = setTimeout(() => setIsSlowRequest(true), 3_000);
 
     try {
       const { ok, data } = await fetchWithRetry(

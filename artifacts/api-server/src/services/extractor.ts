@@ -14,14 +14,14 @@ export const FFMPEG = "ffmpeg";
 const BASE_ARGS = [
   "--no-warnings",
   "--no-playlist",
-  "--socket-timeout", "60",
-  "--extractor-retries", "5",
+  "--socket-timeout", "20",
+  "--extractor-retries", "3",
   "--no-check-certificate",
-  "--concurrent-fragments", "16",
+  "--concurrent-fragments", "8",
   "--buffer-size", "1M",
   "--http-chunk-size", "10M",
-  "--retries", "10",
-  "--fragment-retries", "10",
+  "--retries", "5",
+  "--fragment-retries", "5",
 ];
 
 // Rotate user agents on retry to avoid rate-limiting
@@ -106,7 +106,7 @@ export async function extractInfo(url: string, handler?: HandlerConfig): Promise
         ...extraArgs,
         "--dump-json",
         url,
-      ], { timeout: 60000, maxBuffer: 50 * 1024 * 1024 });
+      ], { timeout: 25_000, maxBuffer: 50 * 1024 * 1024 });
 
       const info = JSON.parse(stdout) as Record<string, unknown>;
 
@@ -529,7 +529,7 @@ export async function resolvePlaybackUrl(url: string, handler?: HandlerConfig): 
           "-f", fmt,
           "--get-url",
           effectiveUrl,
-        ], { timeout: 35000 });
+        ], { timeout: 20_000 });
 
         const lines = stdout.trim().split("\n").filter((l) => l.startsWith("http"));
         if (lines[0]) return lines[0];

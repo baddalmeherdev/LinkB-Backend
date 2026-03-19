@@ -56,8 +56,8 @@ class MetadataCache {
   get size(): number { return this.store.size; }
 }
 
-// Preview cache: 5 min TTL, up to 500 entries
-export const previewCache = new MetadataCache(5 * 60 * 1000, 500);
+// Preview cache: 10 min TTL, up to 500 entries
+export const previewCache = new MetadataCache(10 * 60 * 1000, 500);
 
-// Full info cache: 3 min TTL, up to 200 entries
-export const infoCache = new MetadataCache(3 * 60 * 1000, 200);
+// Full info cache: 8 min TTL, up to 200 entries
+export const infoCache = new MetadataCache(8 * 60 * 1000, 200);

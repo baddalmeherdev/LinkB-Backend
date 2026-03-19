@@ -68,8 +68,8 @@ function classifyError(msg: string): { status: number; code: string; message: st
 // 2 s to keep it alive. Once committed to 200+chunked, errors are embedded in
 // the JSON body — callers must check body.error, not just res.ok.
 
-const HEARTBEAT_DELAY_MS = 3_000;
-const HEARTBEAT_INTERVAL_MS = 2_000;
+const HEARTBEAT_DELAY_MS = 500;
+const HEARTBEAT_INTERVAL_MS = 1_000;
 
 async function withHeartbeat<T>(
   res: Response,
@@ -759,13 +759,13 @@ router.get("/status", async (_req: Request, res: Response) => {
 const BASE_YTDLP_ARGS = [
   "--no-warnings", "--no-playlist",
   "--no-check-certificate",
-  "--concurrent-fragments", "16",
+  "--concurrent-fragments", "8",
   "--buffer-size", "1M",
   "--http-chunk-size", "10M",
-  "--retries", "10",
-  "--fragment-retries", "10",
-  "--socket-timeout", "60",
-  "--extractor-retries", "5",
+  "--retries", "5",
+  "--fragment-retries", "5",
+  "--socket-timeout", "20",
+  "--extractor-retries", "3",
   "--format-sort", "res,fps,codec:avc:m4a,size,br,asr",
 ];
 
