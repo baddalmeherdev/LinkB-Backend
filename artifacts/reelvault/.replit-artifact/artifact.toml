@@ -1,6 +1,7 @@
 kind = "mobile"
 previewPath = "/"
-title = "ReelVault"
+title = "LinkB Downloader"
+icon = "assets/images/icon.png"
 version = "1.0.0"
 id = "artifacts/reelvault"
 router = "expo-domain"
