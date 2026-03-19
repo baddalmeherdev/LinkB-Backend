@@ -215,6 +215,38 @@ export default function DownloadScreen() {
     initUnityAds();
   }, []);
 
+  // Handle URLs shared to the app via Android intent (ACTION_SEND / deep links)
+  useEffect(() => {
+    const handleIncomingUrl = (rawUrl: string | null) => {
+      if (!rawUrl) return;
+      // Direct URL shared (e.g. YouTube link via share sheet)
+      if (isValidUrl(rawUrl)) {
+        handleUrlChange(rawUrl);
+        return;
+      }
+      // Deep-link URL may carry the target as a query param
+      try {
+        const parsed = new URL(rawUrl);
+        const target =
+          parsed.searchParams.get("url") ??
+          parsed.searchParams.get("text") ??
+          parsed.searchParams.get("shareText");
+        if (target && isValidUrl(target)) {
+          handleUrlChange(target);
+        }
+      } catch {}
+    };
+
+    // Cold start — app was opened via intent
+    Linking.getInitialURL().then(handleIncomingUrl).catch(() => {});
+
+    // Warm start — URL arrives while app is already running
+    const subscription = Linking.addEventListener("url", ({ url }) =>
+      handleIncomingUrl(url)
+    );
+    return () => subscription.remove();
+  }, []);
+
   useEffect(() => {
     if (autoUrl && typeof autoUrl === "string" && isValidUrl(autoUrl)) {
       handleUrlChange(autoUrl);

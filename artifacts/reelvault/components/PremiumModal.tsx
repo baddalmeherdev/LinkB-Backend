@@ -182,7 +182,7 @@ export function PremiumModal({ visible, onClose }: Props) {
                   <Feather name="play-circle" size={18} color={C.accent} />
                 )}
                 <Text style={styles.watchAdBtnText}>
-                  {adLoading ? "Loading Ad…" : "Watch Ad — Free 24h Access"}
+                  {adLoading ? "Loading Ad…" : "Watch Ad to Unlock Download"}
                 </Text>
               </Pressable>
 

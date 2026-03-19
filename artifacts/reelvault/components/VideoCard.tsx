@@ -159,11 +159,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     flexWrap: "wrap",
+    minWidth: 0,
   },
   platform: {
     color: C.textSecondary,
     fontSize: 13,
     fontFamily: "Inter_400Regular",
+    flexShrink: 0,
+    paddingRight: 2,
   },
   dot: {
     color: C.textMuted,

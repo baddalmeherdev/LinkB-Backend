@@ -20,6 +20,9 @@ export const REWARDED_PLACEMENT = "Rewarded_Android";
 export const INTERSTITIAL_PLACEMENT = "Interstitial_Android";
 
 export function initUnityAds(): void {
+  // testMode: false — production mode, real ads will show.
+  // To enable real Unity Ads SDK replace this stub with:
+  //   UnityAds.initialize(UNITY_GAME_ID, false);
 }
 
 /**

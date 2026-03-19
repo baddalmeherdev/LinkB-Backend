@@ -19,6 +19,7 @@
     "android": {
       "package": "com.badalmeher.linkbdownloader",
       "jsEngine": "hermes",
+      "icon": "./assets/images/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#0A0A0F"
@@ -26,6 +27,13 @@
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "intentFilters": [
+        {
+          "action": "SEND",
+          "data": [{ "mimeType": "text/plain" }],
+          "category": ["DEFAULT"]
+        }
       ]
     },
     "web": {

@@ -233,11 +233,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 5,
     flexWrap: "wrap",
+    minWidth: 0,
   },
   platformText: {
     color: C.textSecondary,
     fontSize: 12,
     fontFamily: "Inter_500Medium",
+    flexShrink: 0,
+    paddingRight: 2,
   },
   dot: {
     color: C.textMuted,
