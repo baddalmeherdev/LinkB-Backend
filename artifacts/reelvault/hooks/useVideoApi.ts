@@ -2,9 +2,14 @@ import { useState } from "react";
 import type { VideoInfo, VideoQuality } from "@/context/AppContext";
 import type { PreviewData } from "@/components/LinkPreviewCard";
 
-// Hardcoded production backend — prevents blank/spinner caused by missing env vars.
-// For local dev, temporarily replace with your Replit preview URL.
-const BASE_URL = "https://linkb-backend-api.onrender.com";
+// API backend URL.
+// EXPO_PUBLIC_API_URL overrides everything (set in EAS build for production APK).
+// Falls back to the deployed Replit domain, then to local dev domain.
+const BASE_URL: string = (() => {
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+  if (process.env.EXPO_PUBLIC_DOMAIN) return `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
+  return "https://video-downloader-2--badalmeherv.replit.app";
+})();
 
 // Maximum time to wait for a single API attempt (90 s).
 // yt-dlp can take 10-45 s on first run; we give generous room.

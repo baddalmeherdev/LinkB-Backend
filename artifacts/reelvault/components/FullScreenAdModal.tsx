@@ -11,12 +11,12 @@ import {
 import { WebView } from "react-native-webview";
 
 const START_IO_APP_ID = "202335300";
-const { width: SCREEN_W } = Dimensions.get("window");
-const AD_W = Math.min(SCREEN_W - 0, 728);
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
-function buildAdHtml(adType: "banner" | "interstitial") {
-  const isInterstitial = adType === "interstitial";
+function buildAdHtml(adType: "rewarded" | "interstitial") {
   const bgColor = "#0a0a14";
+  const adW = Math.min(SCREEN_W - 20, 320);
+  const adH = adType === "rewarded" ? 480 : 250;
 
   return `<!DOCTYPE html>
 <html>
@@ -40,32 +40,53 @@ function buildAdHtml(adType: "banner" | "interstitial") {
       align-items: center;
       justify-content: center;
       width: 100%;
-      ${isInterstitial ? "height:100%;" : ""}
+      height: 100%;
+    }
+    #ad-wrap > * {
+      max-width: 100%;
     }
   </style>
 </head>
 <body>
-  <div id="ad-wrap">
-    <script>
-      (function() {
-        var s = document.createElement('script');
-        s.async = true;
-        s.src = 'https://cdn.startappws.com/loader.js';
-        s.setAttribute('data-app-id', '${START_IO_APP_ID}');
-        ${isInterstitial
-          ? "s.setAttribute('data-ad-width', '300'); s.setAttribute('data-ad-height', '250');"
-          : `s.setAttribute('data-ad-width', '${Math.min(AD_W - 20, 320)}'); s.setAttribute('data-ad-height', '50');`
-        }
-        document.getElementById('ad-wrap').appendChild(s);
-      })();
-    </script>
-  </div>
+  <div id="ad-wrap"></div>
+  <script>
+    (function() {
+      var container = document.getElementById('ad-wrap');
+      var adW = ${adW};
+      var adH = ${adH};
+
+      function loadStartIO() {
+        try {
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = 'https://cdn.startapp.com/startio.js';
+          s.setAttribute('data-app-id', '${START_IO_APP_ID}');
+          s.setAttribute('data-ad-width', String(adW));
+          s.setAttribute('data-ad-height', String(adH));
+          s.setAttribute('data-ad-type', '${adType === "rewarded" ? "rewarded-video" : "interstitial"}');
+          container.appendChild(s);
+        } catch(e) {}
+
+        try {
+          var s2 = document.createElement('script');
+          s2.async = true;
+          s2.src = 'https://cdn.startappws.com/loader.js';
+          s2.setAttribute('data-app-id', '${START_IO_APP_ID}');
+          s2.setAttribute('data-ad-width', String(adW));
+          s2.setAttribute('data-ad-height', String(adH));
+          container.appendChild(s2);
+        } catch(e) {}
+      }
+
+      loadStartIO();
+    })();
+  </script>
 </body>
 </html>`;
 }
 
-const INTERSTITIAL_DURATION = 6;
-const REWARDED_DURATION = 30;
+const INTERSTITIAL_DURATION = 5;
+const REWARDED_DURATION = 15;
 
 type Props = {
   visible: boolean;
@@ -82,6 +103,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
   useEffect(() => {
     if (!visible) {
       if (timerRef.current) clearInterval(timerRef.current);
+      setCanClose(false);
       return;
     }
 
@@ -96,7 +118,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
           if (timerRef.current) clearInterval(timerRef.current);
           setCanClose(true);
           if (mode === "interstitial") {
-            setTimeout(() => onComplete(true), 400);
+            setTimeout(() => onComplete(true), 500);
           }
           return 0;
         }
@@ -127,16 +149,16 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
       <View style={styles.root}>
         <View style={styles.topBar}>
           <View style={styles.adBadge}>
-            <Text style={styles.adBadgeText}>Ad</Text>
+            <Text style={styles.adBadgeText}>AD</Text>
           </View>
 
           <Text style={styles.topBarTitle} numberOfLines={1}>
             {isRewarded
               ? canClose
-                ? "🎉 Reward earned — tap Close"
-                : `Watch ${countdown}s to unlock HD`
+                ? "🎉 Reward earned! Tap Close"
+                : `Watch ${countdown}s to unlock access`
               : countdown > 0
-              ? `Video ready in ${countdown}s…`
+              ? `Ad finishes in ${countdown}s…`
               : "Done!"}
           </Text>
 
@@ -147,7 +169,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
               android_ripple={{ color: "#ffffff22", radius: 24 }}
             >
               <Text style={styles.closeBtnText}>
-                {isRewarded ? "Close & Get Reward" : "Close"}
+                {isRewarded ? "Get Reward" : "Close"}
               </Text>
             </Pressable>
           ) : (
@@ -160,7 +182,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
         <View style={styles.adArea}>
           <WebView
             key={webviewKey}
-            source={{ html: buildAdHtml("interstitial") }}
+            source={{ html: buildAdHtml(mode) }}
             style={styles.webview}
             javaScriptEnabled
             domStorageEnabled
@@ -169,6 +191,8 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
             originWhitelist={["*"]}
             scrollEnabled={false}
             allowsFullscreenVideo
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
             onShouldStartLoadWithRequest={() => true}
             onError={() => {}}
             onHttpError={() => {}}
@@ -179,12 +203,12 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
           {isRewarded ? (
             canClose ? (
               <Text style={styles.bottomSuccess}>
-                You've earned free HD download access!
+                You've earned free Premium access!
               </Text>
             ) : (
               <>
                 <Text style={styles.bottomTitle}>
-                  Watch the full ad to unlock HD download
+                  Watch the full ad to unlock free access
                 </Text>
                 <Text style={styles.bottomSub}>
                   Closing early will not grant the reward
@@ -193,7 +217,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
             )
           ) : (
             <Text style={styles.bottomTitle}>
-              Preparing your download — just a moment…
+              Your download will start shortly…
             </Text>
           )}
         </View>

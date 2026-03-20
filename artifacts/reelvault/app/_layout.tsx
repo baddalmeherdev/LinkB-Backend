@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppProvider } from "@/context/AppContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { FullScreenAdModal } from "@/components/FullScreenAdModal";
+import { registerAdModal } from "@/utils/adSystem";
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -156,6 +158,27 @@ function RootLayoutNav() {
 // ── Platform layouts ───────────────────────────────────────────────────────
 
 function NativeLayout() {
+  const [adVisible, setAdVisible] = useState(false);
+  const [adMode, setAdMode] = useState<"rewarded" | "interstitial">("rewarded");
+  const adResolveRef = useRef<((earned: boolean) => void) | null>(null);
+
+  useEffect(() => {
+    registerAdModal((mode, resolve) => {
+      adResolveRef.current = resolve;
+      setAdMode(mode);
+      setAdVisible(true);
+    });
+    return () => {
+      registerAdModal(null);
+    };
+  }, []);
+
+  const handleAdComplete = useCallback((earned: boolean) => {
+    setAdVisible(false);
+    adResolveRef.current?.(earned);
+    adResolveRef.current = null;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -176,7 +199,6 @@ function NativeLayout() {
             Inter_600SemiBold,
             Inter_700Bold,
           }),
-          // Hard cap at 4 s — never block the app for longer than this
           new Promise<void>((resolve) => setTimeout(resolve, 4000)),
         ]);
       } catch (e) {
@@ -192,7 +214,16 @@ function NativeLayout() {
     return () => { cancelled = true; };
   }, []);
 
-  return <RootLayoutNav />;
+  return (
+    <>
+      <RootLayoutNav />
+      <FullScreenAdModal
+        visible={adVisible}
+        mode={adMode}
+        onComplete={handleAdComplete}
+      />
+    </>
+  );
 }
 
 function WebLayout() {

@@ -700,9 +700,8 @@ export default function DownloadScreen() {
       setIsPlayModalOpen(true);
 
       try {
-        const BASE = process.env.EXPO_PUBLIC_DOMAIN
-          ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-          : "";
+        const BASE = process.env.EXPO_PUBLIC_API_URL
+          ?? (process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "https://video-downloader-2--badalmeherv.replit.app");
         const params = new URLSearchParams({ url: videoUrl });
         const controller = new AbortController();
         const playTimeout = setTimeout(() => controller.abort(), 60_000);
@@ -1376,14 +1375,15 @@ const styles = StyleSheet.create({
     backgroundColor: C.surfaceElevated, paddingHorizontal: 14, paddingVertical: 12,
     borderRadius: 12, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium" },
+  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium", paddingRight: 2 },
   fetchBtn: {
     flex: 1, flexDirection: "row", alignItems: "center",
     justifyContent: "center", gap: 8,
     backgroundColor: C.accent, paddingVertical: 13, borderRadius: 12,
+    paddingHorizontal: 16,
   },
   fetchBtnDisabled: { opacity: 0.45 },
-  fetchBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
+  fetchBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold", paddingRight: 2 },
   errorBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: "#1A0000", borderRadius: 10, padding: 12,
@@ -1546,10 +1546,10 @@ const styles = StyleSheet.create({
   featureChip: {
     flexShrink: 0,
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.surfaceElevated, paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium", flexShrink: 0 },
+  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium" },
   supportedPlatforms: {
     flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap",
     justifyContent: "center", paddingHorizontal: 4,
@@ -1557,11 +1557,11 @@ const styles = StyleSheet.create({
   platformPill: {
     flexShrink: 0,
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.surfaceElevated, paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 5,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
   platformDot: { width: 6, height: 6, borderRadius: 3, flexShrink: 0 },
-  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold", flexShrink: 0 },
+  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold" },
   disclaimerBox: {
     flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 16,
     backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 10,
