@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { initUnityAds, showRewardedAd, showInterstitialAd } from "@/utils/unityAds";
+import { showRewardedAd, showInterstitialAd } from "@/utils/unityAds";
 import {
   ActivityIndicator,
   Alert,
@@ -212,9 +212,6 @@ export default function DownloadScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    initUnityAds();
-  }, []);
 
   // Handle URLs shared to the app via Android intent (ACTION_SEND / deep links)
   useEffect(() => {

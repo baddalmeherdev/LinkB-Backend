@@ -1,33 +1,17 @@
-import { Alert } from "react-native";
-
-type ShowAdFn = (mode: "rewarded" | "interstitial", resolve: (earned: boolean) => void) => void;
-
-let _showAd: ShowAdFn | null = null;
-
-export function registerAdModal(fn: ShowAdFn | null) {
-  _showAd = fn;
-}
+import { Platform } from "react-native";
+import { showRewardedAd as unityRewarded, showInterstitialAd as unityInterstitial } from "@/utils/unityAds";
 
 export function showRewardedAd(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (_showAd) {
-      _showAd("rewarded", resolve);
-    } else {
-      Alert.alert(
-        "Watch Ad to Unlock",
-        "Watch the full ad to earn your reward.",
-        [
-          { text: "Skip", style: "cancel", onPress: () => resolve(false) },
-          { text: "Watch Ad", onPress: () => resolve(true) },
-        ],
-        { cancelable: false }
-      );
-    }
-  });
+  if (Platform.OS === "android") {
+    return unityRewarded();
+  }
+  return Promise.resolve(false);
 }
 
 export function showInterstitialAd(): void {
-  if (_showAd) {
-    _showAd("interstitial", () => {});
+  if (Platform.OS === "android") {
+    unityInterstitial();
   }
 }
+
+export function registerAdModal(_fn: unknown): void {}
