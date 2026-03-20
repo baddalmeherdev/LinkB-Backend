@@ -457,7 +457,7 @@ export default function DownloadScreen() {
           isAudio: quality.isAudioOnly,
         });
         downloadCountRef.current += 1;
-        if (downloadCountRef.current % 3 === 0) {
+        if (!isPremium && downloadCountRef.current % 3 === 0) {
           showInterstitialAd();
         }
       } catch (e: any) {
@@ -540,7 +540,7 @@ export default function DownloadScreen() {
           isAudio: quality.isAudioOnly,
         });
         downloadCountRef.current += 1;
-        if (downloadCountRef.current % 3 === 0) {
+        if (!isPremium && downloadCountRef.current % 3 === 0) {
           showInterstitialAd();
         }
       } catch (e: any) {
@@ -580,7 +580,7 @@ export default function DownloadScreen() {
               isAudio: quality.isAudioOnly,
             });
             downloadCountRef.current += 1;
-            if (downloadCountRef.current % 3 === 0) {
+            if (!isPremium && downloadCountRef.current % 3 === 0) {
               showInterstitialAd();
             }
           } catch {
