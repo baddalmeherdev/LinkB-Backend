@@ -25,6 +25,7 @@ const UPI_ID = "winuptournament@fam";
 type Props = {
   visible: boolean;
   onClose: () => void;
+  onAdEarned?: () => void;
 };
 
 const PERKS = [
@@ -41,9 +42,9 @@ function isValidUTR(utr: string): boolean {
   return cleaned.length >= 12 && cleaned.length <= 22 && /^[a-zA-Z0-9]+$/.test(cleaned);
 }
 
-export function PremiumModal({ visible, onClose }: Props) {
+export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
   const insets = useSafeAreaInsets();
-  const { unlockPremium, unlockPremiumOnce } = useApp();
+  const { unlockPremium } = useApp();
   const [step, setStep] = useState<"info" | "payment">("info");
   const [adLoading, setAdLoading] = useState(false);
   const [utr, setUtr] = useState("");
@@ -103,14 +104,14 @@ export function PremiumModal({ visible, onClose }: Props) {
     try {
       const earned = await showRewardedAd();
       if (earned) {
-        await unlockPremiumOnce();
         handleClose();
-        Alert.alert(
-          "🎉 Premium Unlocked!",
-          "You've unlocked Premium access. Enjoy HD downloads, trimming, and more!"
-        );
+        if (onAdEarned) {
+          onAdEarned();
+        } else {
+          Alert.alert("Ad Watched!", "You can now use one premium feature for free.");
+        }
       } else {
-        Alert.alert("Ad Skipped", "Watch the full ad to earn free Premium access.");
+        Alert.alert("Ad Skipped", "Watch the full ad to unlock one premium feature.");
       }
     } catch {
       Alert.alert("Error", "Could not load the ad. Please try again.");

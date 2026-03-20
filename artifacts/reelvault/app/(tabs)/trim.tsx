@@ -55,9 +55,9 @@ function isValidTime(t: string): boolean {
 
 export default function TrimScreen() {
   const insets = useSafeAreaInsets();
-  const { isPremium, unlockPremiumOnce } = useApp();
+  const { isPremium } = useApp();
   const router = useRouter();
-  const { url: paramUrl } = useLocalSearchParams<{ url?: string }>();
+  const { url: paramUrl, adUnlocked } = useLocalSearchParams<{ url?: string; adUnlocked?: string }>();
   const { fetchVideoInfo, isLoadingInfo, isSlowRequest } = useVideoApi();
 
   const [url, setUrl] = useState(paramUrl ?? "");
@@ -70,6 +70,7 @@ export default function TrimScreen() {
   const [isTrimming, setIsTrimming] = useState(false);
   const [trimProgress, setTrimProgress] = useState(0);
   const [trimDone, setTrimDone] = useState(false);
+  const [adUnlockedTrim, setAdUnlockedTrim] = useState(adUnlocked === "1");
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -208,6 +209,7 @@ export default function TrimScreen() {
         setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
 
         setTrimDone(true);
+        setAdUnlockedTrim(false);
         Alert.alert("Done!", "Trimmed video downloaded successfully.");
       } else {
         let fakeProgress = 0;
@@ -229,6 +231,7 @@ export default function TrimScreen() {
 
         if (result?.uri) {
           setTrimDone(true);
+          setAdUnlockedTrim(false);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           try {
             const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -255,7 +258,7 @@ export default function TrimScreen() {
     }
   };
 
-  if (!isPremium) {
+  if (!isPremium && !adUnlockedTrim) {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <LinearGradient
@@ -299,14 +302,14 @@ export default function TrimScreen() {
               if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               const earned = await showRewardedAd();
               if (earned) {
-                await unlockPremiumOnce();
+                setAdUnlockedTrim(true);
               } else {
-                Alert.alert("Ad Skipped", "Watch the full ad to unlock Trim for 24 hours.");
+                Alert.alert("Ad Skipped", "Watch the full ad to unlock Trim for one use.");
               }
             }}
           >
             <Feather name="play-circle" size={16} color={C.accent} />
-            <Text style={styles.watchAdBtnText}>Watch Ad to Unlock for 24 hours (Free)</Text>
+            <Text style={styles.watchAdBtnText}>Watch Ad to Use Trim Once (Free)</Text>
           </Pressable>
         </View>
       </View>

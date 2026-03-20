@@ -45,7 +45,6 @@ type AppContextType = {
   isPremium: boolean;
   premiumExpiry: number | null;
   unlockPremium: () => void;
-  unlockPremiumOnce: () => Promise<void>;
   history: DownloadHistoryItem[];
   addToHistory: (item: Omit<DownloadHistoryItem, "id" | "downloadedAt">) => void;
   clearHistory: () => void;

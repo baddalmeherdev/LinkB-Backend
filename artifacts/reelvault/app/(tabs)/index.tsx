@@ -86,7 +86,7 @@ function generateHashtags(title: string, platform: string): string {
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isPremium, addToHistory, unlockPremiumOnce } = useApp();
+  const { isPremium, addToHistory } = useApp();
   const { autoUrl, shareText } = useLocalSearchParams<{ autoUrl?: string; shareText?: string }>();
   const {
     fetchPreview,
@@ -105,6 +105,7 @@ export default function DownloadScreen() {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const pendingAdQualityRef = useRef<VideoQuality | null>(null);
   const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
   const [lastDownloadedQuality, setLastDownloadedQuality] = useState<VideoQuality | null>(null);
   const [captionText, setCaptionText] = useState<string | null>(null);
@@ -669,13 +670,28 @@ export default function DownloadScreen() {
       (q) => !q.isAudioOnly && (isPremium || !q.isHD)
     );
     if (available.length === 0) {
+      // All qualities are HD — store best HD so ad callback can trigger it
+      const allHD = videoInfo.qualities
+        .filter((q) => !q.isAudioOnly)
+        .sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0));
+      pendingAdQualityRef.current = allHD[0] ?? null;
       setShowPremiumModal(true);
       return;
     }
+    pendingAdQualityRef.current = null;
     // Highest resolution in allowed tier
     const best = available.sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0))[0];
     await handleDownload(best);
   };
+
+  const handlePremiumAdEarned = useCallback(() => {
+    const q = pendingAdQualityRef.current;
+    if (q) {
+      adUnlockedForHDRef.current = true;
+      handleDownload(q).finally(() => { adUnlockedForHDRef.current = false; });
+      pendingAdQualityRef.current = null;
+    }
+  }, []);
 
   const handleCaption = () => {
     if (!videoInfo) return;
@@ -774,8 +790,7 @@ export default function DownloadScreen() {
             onPress: async () => {
               const earned = await showRewardedAd();
               if (earned) {
-                await unlockPremiumOnce();
-                router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl } });
+                router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl, adUnlocked: "1" } });
               } else {
                 Alert.alert("Ad Skipped", "Watch the full ad to unlock the Trim feature.");
               }
@@ -1223,7 +1238,11 @@ export default function DownloadScreen() {
         </View>
       )}
 
-      <PremiumModal visible={showPremiumModal} onClose={() => setShowPremiumModal(false)} />
+      <PremiumModal
+        visible={showPremiumModal}
+        onClose={() => setShowPremiumModal(false)}
+        onAdEarned={handlePremiumAdEarned}
+      />
 
       {/* Download Progress Overlay */}
       {isDownloading || downloadPhase === "done" ? (
