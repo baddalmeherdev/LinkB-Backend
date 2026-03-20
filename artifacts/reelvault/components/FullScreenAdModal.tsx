@@ -11,12 +11,16 @@ import {
 import { WebView } from "react-native-webview";
 
 const START_IO_APP_ID = "202335300";
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+const { width: SCREEN_W } = Dimensions.get("window");
+
+const MOBILE_UA =
+  "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
 function buildAdHtml(adType: "rewarded" | "interstitial") {
   const bgColor = "#0a0a14";
   const adW = Math.min(SCREEN_W - 20, 320);
   const adH = adType === "rewarded" ? 480 : 250;
+  const sdkAdType = adType === "rewarded" ? "rewarded-video" : "interstitial";
 
   return `<!DOCTYPE html>
 <html>
@@ -42,43 +46,48 @@ function buildAdHtml(adType: "rewarded" | "interstitial") {
       width: 100%;
       height: 100%;
     }
-    #ad-wrap > * {
-      max-width: 100%;
-    }
+    ins { display: block; }
   </style>
 </head>
 <body>
-  <div id="ad-wrap"></div>
+  <div id="ad-wrap">
+    <ins class="startapp-ad"
+      data-app-id="${START_IO_APP_ID}"
+      data-ad-width="${adW}"
+      data-ad-height="${adH}"
+      data-ad-type="${sdkAdType}">
+    </ins>
+  </div>
   <script>
     (function() {
-      var container = document.getElementById('ad-wrap');
-      var adW = ${adW};
-      var adH = ${adH};
+      var scriptLoaded = false;
 
-      function loadStartIO() {
+      function tryLoadScript(src, retries) {
+        if (scriptLoaded) return;
+        retries = retries || 0;
         try {
           var s = document.createElement('script');
           s.async = true;
-          s.src = 'https://cdn.startapp.com/startio.js';
+          s.src = src;
           s.setAttribute('data-app-id', '${START_IO_APP_ID}');
-          s.setAttribute('data-ad-width', String(adW));
-          s.setAttribute('data-ad-height', String(adH));
-          s.setAttribute('data-ad-type', '${adType === "rewarded" ? "rewarded-video" : "interstitial"}');
-          container.appendChild(s);
-        } catch(e) {}
-
-        try {
-          var s2 = document.createElement('script');
-          s2.async = true;
-          s2.src = 'https://cdn.startappws.com/loader.js';
-          s2.setAttribute('data-app-id', '${START_IO_APP_ID}');
-          s2.setAttribute('data-ad-width', String(adW));
-          s2.setAttribute('data-ad-height', String(adH));
-          container.appendChild(s2);
+          s.setAttribute('data-ad-width', '${adW}');
+          s.setAttribute('data-ad-height', '${adH}');
+          s.setAttribute('data-ad-type', '${sdkAdType}');
+          s.onload = function() { scriptLoaded = true; };
+          s.onerror = function() {
+            if (retries < 2) setTimeout(function() { tryLoadScript(src, retries + 1); }, 1500);
+          };
+          document.head.appendChild(s);
         } catch(e) {}
       }
 
-      loadStartIO();
+      tryLoadScript('https://cdn.startapp.com/startio.js', 0);
+
+      setTimeout(function() {
+        if (!scriptLoaded) {
+          tryLoadScript('https://cdn.startappws.com/loader.js', 0);
+        }
+      }, 2000);
     })();
   </script>
 </body>
@@ -184,6 +193,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
             key={webviewKey}
             source={{ html: buildAdHtml(mode) }}
             style={styles.webview}
+            userAgent={MOBILE_UA}
             javaScriptEnabled
             domStorageEnabled
             thirdPartyCookiesEnabled

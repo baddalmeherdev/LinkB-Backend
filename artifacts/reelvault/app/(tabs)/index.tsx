@@ -541,22 +541,30 @@ export default function DownloadScreen() {
             ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
           filename = direct?.filename ?? fallbackFilename;
         } else {
-          // Free users: always stream through server (watermark + audio merge guaranteed)
-          downloadUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
-          filename = fallbackFilename;
+          // Free users: try direct CDN URL first (fast 2-4s), fall back to server stream
+          const directResult = await getDirectDownloadUrl(
+            videoInfo.originalUrl, quality, videoInfo.title, isPremium
+          );
+          if (directResult?.directUrl) {
+            downloadUrl = directResult.directUrl;
+            filename = directResult.filename;
+          } else {
+            downloadUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+            filename = fallbackFilename;
+          }
         }
 
         const destPath = `${FileSystem.documentDirectory}${filename}`;
 
-        // Fake progress timer — shows activity while server processes (yt-dlp + merge)
+        // Fake progress timer — shows activity while waiting for download to start
         let fakeNativeProgress = 0;
         let realBytesStarted = false;
         const fakeNativeTimer = setInterval(() => {
           if (!realBytesStarted) {
-            fakeNativeProgress = Math.min(fakeNativeProgress + 0.004, 0.35);
+            fakeNativeProgress = Math.min(fakeNativeProgress + 0.015, 0.35);
             setDownloadProgress(fakeNativeProgress);
           }
-        }, 500);
+        }, 200);
 
         const downloadResumable = FileSystem.createDownloadResumable(
           downloadUrl,
@@ -1192,7 +1200,7 @@ export default function DownloadScreen() {
               ) : adEarnedOnce ? (
                 <Animated.View entering={FadeIn} style={[styles.cleanBanner, { borderColor: C.gold + "50", backgroundColor: "#1A1000" }]}>
                   <MaterialCommunityIcons name="play-circle" size={14} color={C.gold} />
-                  <Text style={[styles.cleanBannerText, { color: C.gold }]}>Ad reward active — 1 premium feature use bacha hai</Text>
+                  <Text style={[styles.cleanBannerText, { color: C.gold }]}>Ad reward active — 1 free premium feature unlocked</Text>
                 </Animated.View>
               ) : (
                 <Animated.View entering={FadeIn} style={styles.watermarkBanner}>
@@ -1330,10 +1338,10 @@ export default function DownloadScreen() {
               <View style={styles.downloadOverlayText}>
                 <Text style={styles.downloadOverlayTitle}>
                   {downloadPhase === "preparing"
-                    ? "Processing on server…"
+                    ? "Getting download link…"
                     : downloadPhase === "downloading"
-                    ? downloadProgress < 0.36
-                      ? "Server preparing video…"
+                    ? downloadProgress < 0.15
+                      ? "Starting download…"
                       : `Downloading… ${Math.round(downloadProgress * 100)}%`
                     : "Download complete!"}
                 </Text>

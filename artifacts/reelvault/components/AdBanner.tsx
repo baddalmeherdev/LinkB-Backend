@@ -7,6 +7,9 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 const BANNER_WIDTH = Math.min(SCREEN_WIDTH - 32, 320);
 const BANNER_HEIGHT = 50;
 
+const MOBILE_UA =
+  "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+
 const bannerHtml = `<!DOCTYPE html>
 <html>
 <head>
@@ -22,52 +25,59 @@ const bannerHtml = `<!DOCTYPE html>
       overflow: hidden;
     }
     #banner-container {
-      width: 100%;
-      height: 100%;
+      width: ${BANNER_WIDTH}px;
+      height: ${BANNER_HEIGHT}px;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
     }
-    #banner-container > * {
-      max-width: 100%;
-      max-height: 100%;
-    }
+    ins { display: block; }
   </style>
 </head>
 <body>
-  <div id="banner-container"></div>
+  <div id="banner-container">
+    <ins class="startapp-ad"
+      data-app-id="${START_IO_APP_ID}"
+      data-ad-width="${BANNER_WIDTH}"
+      data-ad-height="${BANNER_HEIGHT}"
+      data-ad-type="banner">
+    </ins>
+  </div>
   <script>
     (function() {
-      try {
-        var container = document.getElementById('banner-container');
-        var s = document.createElement('script');
-        s.async = true;
-        s.src = 'https://cdn.startapp.com/startio.js';
-        s.setAttribute('data-app-id', '${START_IO_APP_ID}');
-        s.setAttribute('data-ad-width', '${BANNER_WIDTH}');
-        s.setAttribute('data-ad-height', '${BANNER_HEIGHT}');
-        s.onload = function() {
-          if (window.startApp && window.startApp.showBanner) {
-            window.startApp.showBanner(container, {
-              appId: '${START_IO_APP_ID}',
-              adWidth: ${BANNER_WIDTH},
-              adHeight: ${BANNER_HEIGHT}
-            });
-          }
-        };
-        container.appendChild(s);
-      } catch(e) {}
+      var loaded = false;
 
-      try {
-        var fallbackScript = document.createElement('script');
-        fallbackScript.async = true;
-        fallbackScript.src = 'https://cdn.startappws.com/loader.js';
-        fallbackScript.setAttribute('data-app-id', '${START_IO_APP_ID}');
-        fallbackScript.setAttribute('data-ad-width', '${BANNER_WIDTH}');
-        fallbackScript.setAttribute('data-ad-height', '${BANNER_HEIGHT}');
-        document.getElementById('banner-container').appendChild(fallbackScript);
-      } catch(e) {}
+      function tryLoadScript(src, attrs, retries) {
+        if (loaded) return;
+        retries = retries || 0;
+        try {
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = src;
+          for (var k in attrs) { s.setAttribute(k, attrs[k]); }
+          s.onload = function() { loaded = true; };
+          s.onerror = function() {
+            if (retries < 2) setTimeout(function() { tryLoadScript(src, attrs, retries + 1); }, 1500);
+          };
+          document.head.appendChild(s);
+        } catch(e) {}
+      }
+
+      var attrs = {
+        'data-app-id': '${START_IO_APP_ID}',
+        'data-ad-width': '${BANNER_WIDTH}',
+        'data-ad-height': '${BANNER_HEIGHT}',
+        'data-ad-type': 'banner'
+      };
+
+      tryLoadScript('https://cdn.startapp.com/startio.js', attrs, 0);
+
+      setTimeout(function() {
+        if (!loaded) {
+          tryLoadScript('https://cdn.startappws.com/loader.js', attrs, 0);
+        }
+      }, 2000);
     })();
   </script>
 </body>
@@ -84,6 +94,7 @@ export function AdBanner() {
         <WebView
           source={{ html: bannerHtml }}
           style={[styles.webview, { width: BANNER_WIDTH, opacity: loaded ? 1 : 0 }]}
+          userAgent={MOBILE_UA}
           scrollEnabled={false}
           originWhitelist={["*"]}
           mixedContentMode="always"
@@ -96,7 +107,7 @@ export function AdBanner() {
           startInLoadingState={false}
           onLoad={() => setLoaded(true)}
           onError={() => setLoaded(true)}
-          onHttpError={() => {}}
+          onHttpError={() => setLoaded(true)}
           onShouldStartLoadWithRequest={() => true}
           allowsLinkPreview={false}
           geolocationEnabled={false}
