@@ -1,17 +1,37 @@
-import { Platform } from "react-native";
-import { showRewardedAd as unityRewarded, showInterstitialAd as unityInterstitial } from "@/utils/unityAds";
+import { NativeModules, Platform } from "react-native";
+import {
+  showRewardedAd as unityRewarded,
+  showInterstitialAd as unityInterstitial,
+} from "@/utils/unityAds";
 
-export function showRewardedAd(): Promise<boolean> {
-  if (Platform.OS === "android") {
+function hasUnityAds(): boolean {
+  return !!NativeModules.RNUnityAds && Platform.OS === "android";
+}
+
+/**
+ * Show a rewarded ad.
+ * – Built APK: uses Unity Ads native rewarded ad (real money ad).
+ * – Expo Go / web: uses the WebView modal fallback.
+ * Returns true if the user completed the ad and earned the reward.
+ */
+export async function showRewardedAd(
+  fallback: () => Promise<boolean>
+): Promise<boolean> {
+  if (hasUnityAds()) {
     return unityRewarded();
   }
-  return Promise.resolve(false);
+  return fallback();
 }
 
-export function showInterstitialAd(): void {
-  if (Platform.OS === "android") {
+/**
+ * Show an interstitial ad.
+ * – Built APK: uses Unity Ads native interstitial ad.
+ * – Expo Go / web: uses the WebView modal fallback.
+ */
+export function showInterstitialAd(fallback: () => void): void {
+  if (hasUnityAds()) {
     unityInterstitial();
+  } else {
+    fallback();
   }
 }
-
-export function registerAdModal(_fn: unknown): void {}

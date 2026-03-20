@@ -1,6 +1,6 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
 import { FullScreenAdModal } from "@/components/FullScreenAdModal";
+import { showRewardedAd as showRewardedAdUnified } from "@/utils/adSystem";
 
 const C = Colors.dark;
 const UPI_ID = "winuptournament@fam";
@@ -48,6 +49,7 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
   const [step, setStep] = useState<"info" | "payment">("info");
   const [adLoading, setAdLoading] = useState(false);
   const [adVisible, setAdVisible] = useState(false);
+  const adResolveRef = useRef<((earned: boolean) => void) | null>(null);
   const [utr, setUtr] = useState("");
   const [utrError, setUtrError] = useState("");
   const [utrFocused, setUtrFocused] = useState(false);
@@ -98,14 +100,7 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
     onClose();
   };
 
-  const handleWatchAd = () => {
-    if (adLoading || Platform.OS === "web") return;
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setAdVisible(true);
-  };
-
-  const handleAdComplete = (earned: boolean) => {
-    setAdVisible(false);
+  const processAdResult = (earned: boolean) => {
     if (earned) {
       grantAdReward();
       handleClose();
@@ -120,12 +115,30 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
     }
   };
 
+  const handleWatchAd = async () => {
+    if (adLoading || Platform.OS === "web") return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const earned = await showRewardedAdUnified(() =>
+      new Promise<boolean>((resolve) => {
+        adResolveRef.current = resolve;
+        setAdVisible(true);
+      })
+    );
+    processAdResult(earned);
+  };
+
+  const onAdModalComplete = (earned: boolean) => {
+    setAdVisible(false);
+    adResolveRef.current?.(earned);
+    adResolveRef.current = null;
+  };
+
   return (
     <>
     <FullScreenAdModal
       visible={adVisible}
       mode="rewarded"
-      onComplete={handleAdComplete}
+      onComplete={onAdModalComplete}
     />
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
       <View style={styles.overlay}>

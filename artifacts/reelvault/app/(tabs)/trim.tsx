@@ -1,6 +1,7 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinkBLogo } from "@/components/LinkBLogo";
 import { FullScreenAdModal } from "@/components/FullScreenAdModal";
+import { showRewardedAd as showRewardedAdUnified } from "@/utils/adSystem";
 import * as Haptics from "expo-haptics";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
@@ -72,6 +73,7 @@ export default function TrimScreen() {
   const [trimDone, setTrimDone] = useState(false);
   const [adUnlockedTrim, setAdUnlockedTrim] = useState(adUnlocked === "1");
   const [adModalVisible, setAdModalVisible] = useState(false);
+  const adModalResolveRef = useRef<((earned: boolean) => void) | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -267,7 +269,8 @@ export default function TrimScreen() {
         mode="rewarded"
         onComplete={(earned) => {
           setAdModalVisible(false);
-          if (earned) setAdUnlockedTrim(true);
+          adModalResolveRef.current?.(earned);
+          adModalResolveRef.current = null;
         }}
       />
       <View style={[styles.container, { paddingTop: topPad }]}>
@@ -308,9 +311,15 @@ export default function TrimScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.watchAdBtn, { opacity: pressed ? 0.8 : 1 }]}
-            onPress={() => {
+            onPress={async () => {
               if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setAdModalVisible(true);
+              const earned = await showRewardedAdUnified(() =>
+                new Promise<boolean>((resolve) => {
+                  adModalResolveRef.current = resolve;
+                  setAdModalVisible(true);
+                })
+              );
+              if (earned) setAdUnlockedTrim(true);
             }}
           >
             <Feather name="play-circle" size={16} color={C.accent} />

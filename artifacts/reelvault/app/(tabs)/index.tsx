@@ -11,6 +11,10 @@ import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FullScreenAdModal } from "@/components/FullScreenAdModal";
 import {
+  showRewardedAd as showRewardedAdUnified,
+  showInterstitialAd as showInterstitialAdUnified,
+} from "@/utils/adSystem";
+import {
   ActivityIndicator,
   Alert,
   Linking,
@@ -259,9 +263,11 @@ export default function DownloadScreen() {
   useEffect(() => {
     if (Platform.OS !== "web") {
       const timer = setTimeout(() => {
-        setAdModalMode("interstitial");
-        setAdModalVisible(true);
-        adResolveRef.current = () => {};
+        showInterstitialAdUnified(() => {
+          setAdModalMode("interstitial");
+          setAdModalVisible(true);
+          adResolveRef.current = () => {};
+        });
       }, 3000);
       return () => clearTimeout(timer);
     }
@@ -398,8 +404,7 @@ export default function DownloadScreen() {
     if (!videoInfo) return;
 
     if (quality.isHD && !isPremium && !adUnlockedForHDRef.current && !adEarnedOnce) {
-      // Directly show rewarded ad — no popup needed
-      const earned = await showAdModal("rewarded");
+      const earned = await showRewardedAdUnified(() => showAdModal("rewarded"));
       if (earned) {
         adUnlockedForHDRef.current = true;
         await handleDownload(quality);
@@ -500,7 +505,7 @@ export default function DownloadScreen() {
         });
         downloadCountRef.current += 1;
         if (!isPremium && downloadCountRef.current % 3 === 0) {
-          setTimeout(() => showAdModal("interstitial"), 800);
+          setTimeout(() => showInterstitialAdUnified(() => showAdModal("interstitial")), 800);
         }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
@@ -583,7 +588,7 @@ export default function DownloadScreen() {
         });
         downloadCountRef.current += 1;
         if (!isPremium && downloadCountRef.current % 3 === 0) {
-          setTimeout(() => showAdModal("interstitial"), 800);
+          setTimeout(() => showInterstitialAdUnified(() => showAdModal("interstitial")), 800);
         }
       } catch (e: any) {
         if (!String(e).includes("cancel")) {
@@ -623,7 +628,7 @@ export default function DownloadScreen() {
             });
             downloadCountRef.current += 1;
             if (!isPremium && downloadCountRef.current % 3 === 0) {
-              setTimeout(() => showAdModal("interstitial"), 800);
+              setTimeout(() => showInterstitialAdUnified(() => showAdModal("interstitial")), 800);
             }
           } catch {
             setDownloadPhase("");
@@ -827,8 +832,7 @@ export default function DownloadScreen() {
       return;
     }
     if (!isPremium) {
-      // Directly show rewarded ad — no popup needed
-      showAdModal("rewarded").then((earned) => {
+      showRewardedAdUnified(() => showAdModal("rewarded")).then((earned) => {
         if (earned) {
           router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo!.originalUrl, adUnlocked: "1" } });
         }
