@@ -6,17 +6,11 @@
     "preview": {
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://video-downloader-2--badalmeherv.replit.app"
       }
     },
     "production": {
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://video-downloader-2--badalmeherv.replit.app"
       }
     }
   },

@@ -700,8 +700,7 @@ export default function DownloadScreen() {
       setIsPlayModalOpen(true);
 
       try {
-        const BASE = process.env.EXPO_PUBLIC_API_URL
-          ?? (process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "https://video-downloader-2--badalmeherv.replit.app");
+        const BASE = "https://linkb-backend-api.onrender.com";
         const params = new URLSearchParams({ url: videoUrl });
         const controller = new AbortController();
         const playTimeout = setTimeout(() => controller.abort(), 60_000);
@@ -852,7 +851,7 @@ export default function DownloadScreen() {
                   <ActivityIndicator size="small" color="#fff" />
                   <Text style={styles.fetchBtnText}>
                     {isSlowRequest
-                      ? "Processing…"
+                      ? "Waking up…"
                       : isLoadingPreview
                       ? "Previewing…"
                       : "Loading…"}
@@ -879,10 +878,9 @@ export default function DownloadScreen() {
           <Animated.View entering={FadeIn} style={styles.slowRequestBox}>
             <ActivityIndicator size="small" color={C.accent} />
             <View style={styles.slowRequestText}>
-              <Text style={styles.slowRequestTitle}>Processing, please wait…</Text>
+              <Text style={styles.slowRequestTitle}>Waking up server… this might take a minute</Text>
               <Text style={styles.slowRequestSub}>
-                Fetching video info can take up to 30 seconds.
-                The app will retry automatically if needed.
+                The server goes to sleep when idle. First request can take 30–60 seconds. Please wait, it will load!
               </Text>
             </View>
           </Animated.View>
