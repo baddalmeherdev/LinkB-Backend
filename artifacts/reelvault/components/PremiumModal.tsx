@@ -17,7 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useApp } from "@/context/AppContext";
-import { showRewardedAd } from "@/utils/unityAds";
+import { FullScreenAdModal } from "@/components/FullScreenAdModal";
 
 const C = Colors.dark;
 const UPI_ID = "winuptournament@fam";
@@ -47,6 +47,7 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
   const { unlockPremium, grantAdReward } = useApp();
   const [step, setStep] = useState<"info" | "payment">("info");
   const [adLoading, setAdLoading] = useState(false);
+  const [adVisible, setAdVisible] = useState(false);
   const [utr, setUtr] = useState("");
   const [utrError, setUtrError] = useState("");
   const [utrFocused, setUtrFocused] = useState(false);
@@ -97,34 +98,35 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
     onClose();
   };
 
-  const handleWatchAd = async () => {
-    if (adLoading) return;
-    setAdLoading(true);
+  const handleWatchAd = () => {
+    if (adLoading || Platform.OS === "web") return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      const earned = await showRewardedAd();
-      if (earned) {
-        grantAdReward();
-        handleClose();
-        if (onAdEarned) {
-          onAdEarned();
-        } else {
-          Alert.alert(
-            "Ad Dekh Li!",
-            "Ab tum ek baar koi bhi premium feature use kar sakte ho — HD quality download karo ya video trim karo."
-          );
-        }
+    setAdVisible(true);
+  };
+
+  const handleAdComplete = (earned: boolean) => {
+    setAdVisible(false);
+    if (earned) {
+      grantAdReward();
+      handleClose();
+      if (onAdEarned) {
+        onAdEarned();
       } else {
-        Alert.alert("Ad Skip Ho Gayi", "Ek premium feature unlock karne ke liye poori ad dekhni hogi.");
+        Alert.alert(
+          "Ad Dekh Li!",
+          "Ab tum ek baar koi bhi premium feature use kar sakte ho — HD quality download karo ya video trim karo."
+        );
       }
-    } catch {
-      Alert.alert("Error", "Ad load nahi hui. Dobara try karo.");
-    } finally {
-      setAdLoading(false);
     }
   };
 
   return (
+    <>
+    <FullScreenAdModal
+      visible={adVisible}
+      mode="rewarded"
+      onComplete={handleAdComplete}
+    />
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
       <View style={styles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
@@ -290,6 +292,7 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
         </View>
       </View>
     </Modal>
+    </>
   );
 }
 

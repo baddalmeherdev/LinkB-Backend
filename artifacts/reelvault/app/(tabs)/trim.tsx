@@ -1,6 +1,6 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinkBLogo } from "@/components/LinkBLogo";
-import { showRewardedAd } from "@/utils/unityAds";
+import { FullScreenAdModal } from "@/components/FullScreenAdModal";
 import * as Haptics from "expo-haptics";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
@@ -71,6 +71,7 @@ export default function TrimScreen() {
   const [trimProgress, setTrimProgress] = useState(0);
   const [trimDone, setTrimDone] = useState(false);
   const [adUnlockedTrim, setAdUnlockedTrim] = useState(adUnlocked === "1");
+  const [adModalVisible, setAdModalVisible] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -260,6 +261,15 @@ export default function TrimScreen() {
 
   if (!isPremium && !adUnlockedTrim) {
     return (
+      <>
+      <FullScreenAdModal
+        visible={adModalVisible}
+        mode="rewarded"
+        onComplete={(earned) => {
+          setAdModalVisible(false);
+          if (earned) setAdUnlockedTrim(true);
+        }}
+      />
       <View style={[styles.container, { paddingTop: topPad }]}>
         <LinearGradient
           colors={["#1A0A00", C.background]}
@@ -298,14 +308,9 @@ export default function TrimScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.watchAdBtn, { opacity: pressed ? 0.8 : 1 }]}
-            onPress={async () => {
+            onPress={() => {
               if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              const earned = await showRewardedAd();
-              if (earned) {
-                setAdUnlockedTrim(true);
-              } else {
-                Alert.alert("Ad Skipped", "Watch the full ad to unlock Trim for one use.");
-              }
+              setAdModalVisible(true);
             }}
           >
             <Feather name="play-circle" size={16} color={C.accent} />
@@ -313,6 +318,7 @@ export default function TrimScreen() {
           </Pressable>
         </View>
       </View>
+      </>
     );
   }
 

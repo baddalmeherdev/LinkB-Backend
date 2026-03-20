@@ -9,7 +9,7 @@ import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { showRewardedAd, showInterstitialAd } from "@/utils/unityAds";
+import { FullScreenAdModal } from "@/components/FullScreenAdModal";
 import {
   ActivityIndicator,
   Alert,
@@ -132,6 +132,26 @@ export default function DownloadScreen() {
   const [adLoading, setAdLoading] = useState(false);
   const adUnlockedForHDRef = useRef(false);
 
+  // ── Full-screen ad modal (rewarded / interstitial) ──────────────────────
+  const [adModalVisible, setAdModalVisible] = useState(false);
+  const [adModalMode, setAdModalMode] = useState<"rewarded" | "interstitial">("interstitial");
+  const adResolveRef = useRef<((earned: boolean) => void) | null>(null);
+
+  const showAdModal = useCallback((mode: "rewarded" | "interstitial"): Promise<boolean> => {
+    return new Promise((resolve) => {
+      adResolveRef.current = resolve;
+      setAdModalMode(mode);
+      setAdModalVisible(true);
+    });
+  }, []);
+
+  const handleAdComplete = useCallback((earned: boolean) => {
+    setAdModalVisible(false);
+    const resolve = adResolveRef.current;
+    adResolveRef.current = null;
+    resolve?.(earned);
+  }, []);
+
   // Pre-resolved CDN URL cache — populated in background after video info loads.
   // CDN URLs expire ~5 min; we conservatively cache for 4 min.
   const preResolvedRef = useRef<{
@@ -235,24 +255,54 @@ export default function DownloadScreen() {
   }, []);
 
 
-  // Handle URLs shared to the app via Android intent (ACTION_SEND / deep links)
+  // Show interstitial ad on app launch (3s delay so UI is ready)
   useEffect(() => {
+    if (Platform.OS !== "web") {
+      const timer = setTimeout(() => {
+        setAdModalMode("interstitial");
+        setAdModalVisible(true);
+        adResolveRef.current = () => {};
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Handle URLs shared to the app via Android intent (ACTION_SEND / ACTION_VIEW / deep links)
+  useEffect(() => {
+    const extractUrl = (raw: string): string | null => {
+      // Direct http/https URL
+      if (isValidUrl(raw)) return raw;
+      // Try extracting URL from text (e.g. "Check this out https://...")
+      const match = raw.match(/https?:\/\/[^\s]+/);
+      if (match) return match[0];
+      return null;
+    };
+
     const handleIncomingUrl = (rawUrl: string | null) => {
       if (!rawUrl) return;
-      // Direct URL shared (e.g. YouTube link via share sheet)
-      if (isValidUrl(rawUrl)) {
-        handleUrlChange(rawUrl);
+      // Direct URL shared (e.g. YouTube link via share sheet or VIEW intent)
+      const directUrl = extractUrl(rawUrl);
+      if (directUrl) {
+        handleUrlChange(directUrl);
         return;
       }
-      // Deep-link URL may carry the target as a query param
+      // Deep-link URL may carry the target as a query param (linkbdownloader://...)
       try {
         const parsed = new URL(rawUrl);
-        const target =
-          parsed.searchParams.get("url") ??
-          parsed.searchParams.get("text") ??
-          parsed.searchParams.get("shareText");
-        if (target && isValidUrl(target)) {
-          handleUrlChange(target);
+        const candidates = [
+          parsed.searchParams.get("url"),
+          parsed.searchParams.get("text"),
+          parsed.searchParams.get("shareText"),
+          parsed.searchParams.get("shared_url"),
+        ];
+        for (const candidate of candidates) {
+          if (candidate) {
+            const extracted = extractUrl(candidate);
+            if (extracted) {
+              handleUrlChange(extracted);
+              return;
+            }
+          }
         }
       } catch {}
     };
@@ -348,26 +398,13 @@ export default function DownloadScreen() {
     if (!videoInfo) return;
 
     if (quality.isHD && !isPremium && !adUnlockedForHDRef.current && !adEarnedOnce) {
-      Alert.alert(
-        "🎬 HD/4K Unlock Karo — 1 Ad Dekho",
-        "Ek short ad dekho aur HD ya 4K quality mein download karo.",
-        [
-          {
-            text: "Ad Dekho",
-            onPress: async () => {
-              const earned = await showRewardedAd();
-              if (earned) {
-                adUnlockedForHDRef.current = true;
-                await handleDownload(quality);
-                adUnlockedForHDRef.current = false;
-              } else {
-                Alert.alert("Ad Skip Ho Gayi", "HD/4K download karne ke liye poori ad dekhni hogi.");
-              }
-            },
-          },
-          { text: "Cancel", style: "cancel" },
-        ]
-      );
+      // Directly show rewarded ad — no popup needed
+      const earned = await showAdModal("rewarded");
+      if (earned) {
+        adUnlockedForHDRef.current = true;
+        await handleDownload(quality);
+        adUnlockedForHDRef.current = false;
+      }
       return;
     }
 
@@ -463,7 +500,7 @@ export default function DownloadScreen() {
         });
         downloadCountRef.current += 1;
         if (!isPremium && downloadCountRef.current % 3 === 0) {
-          showInterstitialAd();
+          setTimeout(() => showAdModal("interstitial"), 800);
         }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
@@ -546,7 +583,7 @@ export default function DownloadScreen() {
         });
         downloadCountRef.current += 1;
         if (!isPremium && downloadCountRef.current % 3 === 0) {
-          showInterstitialAd();
+          setTimeout(() => showAdModal("interstitial"), 800);
         }
       } catch (e: any) {
         if (!String(e).includes("cancel")) {
@@ -586,7 +623,7 @@ export default function DownloadScreen() {
             });
             downloadCountRef.current += 1;
             if (!isPremium && downloadCountRef.current % 3 === 0) {
-              showInterstitialAd();
+              setTimeout(() => showAdModal("interstitial"), 800);
             }
           } catch {
             setDownloadPhase("");
@@ -790,24 +827,12 @@ export default function DownloadScreen() {
       return;
     }
     if (!isPremium) {
-      Alert.alert(
-        "Trim Unlock Karo",
-        "Ek short ad dekho aur Trim feature free use karo.",
-        [
-          {
-            text: "Ad Dekho",
-            onPress: async () => {
-              const earned = await showRewardedAd();
-              if (earned) {
-                router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl, adUnlocked: "1" } });
-              } else {
-                Alert.alert("Ad Skip Ho Gayi", "Trim feature unlock karne ke liye poori ad dekhni hogi.");
-              }
-            },
-          },
-          { text: "Cancel", style: "cancel" },
-        ]
-      );
+      // Directly show rewarded ad — no popup needed
+      showAdModal("rewarded").then((earned) => {
+        if (earned) {
+          router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo!.originalUrl, adUnlocked: "1" } });
+        }
+      });
       return;
     }
     router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl } });
@@ -1258,6 +1283,12 @@ export default function DownloadScreen() {
         onAdEarned={handlePremiumAdEarned}
       />
 
+      <FullScreenAdModal
+        visible={adModalVisible}
+        mode={adModalMode}
+        onComplete={handleAdComplete}
+      />
+
       {/* Download Progress Overlay */}
       {isDownloading || downloadPhase === "done" ? (
         <Animated.View entering={FadeIn} style={styles.downloadOverlay}>
@@ -1427,15 +1458,15 @@ const styles = StyleSheet.create({
     backgroundColor: C.surfaceElevated, paddingHorizontal: 14, paddingVertical: 12,
     borderRadius: 12, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium", paddingRight: 2 },
+  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium" },
   fetchBtn: {
     flex: 1, flexDirection: "row", alignItems: "center",
     justifyContent: "center", gap: 8,
     backgroundColor: C.accent, paddingVertical: 13, borderRadius: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
   fetchBtnDisabled: { opacity: 0.45 },
-  fetchBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold", paddingRight: 2 },
+  fetchBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold", flexShrink: 0 },
   errorBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: "#1A0000", borderRadius: 10, padding: 12,
@@ -1598,22 +1629,22 @@ const styles = StyleSheet.create({
   featureChip: {
     flexShrink: 0,
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 6,
+    backgroundColor: C.surfaceElevated, paddingLeft: 12, paddingRight: 16, paddingVertical: 7,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium" },
+  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium", flexShrink: 0 },
   supportedPlatforms: {
-    flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap",
-    justifyContent: "center", paddingHorizontal: 4,
+    flexDirection: "row", gap: 8, marginTop: 4, flexWrap: "wrap",
+    justifyContent: "center", paddingHorizontal: 8,
   },
   platformPill: {
     flexShrink: 0,
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 5,
+    backgroundColor: C.surfaceElevated, paddingLeft: 12, paddingRight: 16, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
   platformDot: { width: 6, height: 6, borderRadius: 3, flexShrink: 0 },
-  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold", flexShrink: 0 },
   disclaimerBox: {
     flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 16,
     backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 10,
