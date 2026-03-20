@@ -25,9 +25,7 @@ import { useVideoApi } from "@/hooks/useVideoApi";
 
 const C = Colors.dark;
 
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+const BASE_URL = "https://linkb-backend-api.onrender.com";
 
 function isValidUrl(text: string): boolean {
   return text.startsWith("http://") || text.startsWith("https://");

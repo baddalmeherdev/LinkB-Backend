@@ -7,48 +7,47 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 const BANNER_WIDTH = Math.min(SCREEN_WIDTH - 32, 320);
 const BANNER_HEIGHT = 50;
 
-const bannerHtml = `
-<!DOCTYPE html>
+const bannerHtml = `<!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
       width: ${BANNER_WIDTH}px;
       height: ${BANNER_HEIGHT}px;
-      background: #111;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: transparent;
       overflow: hidden;
     }
     .ad-wrap {
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 100%;
-      height: 100%;
     }
   </style>
 </head>
 <body>
-  <div class="ad-wrap">
-    <script
-      src="https://cdn.startappws.com/loader.js"
-      data-app-id="${START_IO_APP_ID}"
-      data-ad-width="${BANNER_WIDTH}"
-      data-ad-height="${BANNER_HEIGHT}"
-    ></script>
+  <div class="ad-wrap" id="ad-container">
+    <script>
+      (function() {
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://cdn.startappws.com/loader.js';
+        s.setAttribute('data-app-id', '${START_IO_APP_ID}');
+        s.setAttribute('data-ad-width', '${BANNER_WIDTH}');
+        s.setAttribute('data-ad-height', '${BANNER_HEIGHT}');
+        document.getElementById('ad-container').appendChild(s);
+      })();
+    </script>
   </div>
 </body>
-</html>
-`;
+</html>`;
 
 export function AdBanner() {
-  if (Platform.OS === "web") {
-    return null;
-  }
+  if (Platform.OS === "web") return null;
 
   return (
     <View style={styles.container}>
@@ -64,8 +63,11 @@ export function AdBanner() {
           thirdPartyCookiesEnabled
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
+          allowsFullscreenVideo={false}
+          startInLoadingState={false}
           onError={() => {}}
           onHttpError={() => {}}
+          onShouldStartLoadWithRequest={() => true}
         />
       </View>
     </View>

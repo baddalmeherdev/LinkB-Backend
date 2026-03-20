@@ -42,7 +42,6 @@ export function QualityRow({ quality, isPremiumUser, onDownload, onRequirePremiu
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const handlePress = async () => {
-    if (locked) { onRequirePremium(); return; }
     scale.value = withSpring(0.96, {}, () => { scale.value = withSpring(1); });
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
@@ -69,9 +68,10 @@ export function QualityRow({ quality, isPremiumUser, onDownload, onRequirePremiu
           <Text style={styles.qualityText}>
             {quality.label || quality.quality}
           </Text>
-          <Text style={styles.resText}>
-            {quality.resolution !== "audio" ? quality.resolution : "Audio only"}
-            {sizeText ? ` · ${sizeText}` : ""}
+          <Text style={[styles.resText, locked && styles.resTextLocked]}>
+            {locked
+              ? "Tap to Watch Ad & Download"
+              : `${quality.resolution !== "audio" ? quality.resolution : "Audio only"}${sizeText ? ` · ${sizeText}` : ""}`}
           </Text>
         </View>
 
@@ -85,7 +85,7 @@ export function QualityRow({ quality, isPremiumUser, onDownload, onRequirePremiu
           {loading ? (
             <ActivityIndicator size="small" color={C.accent} />
           ) : locked ? (
-            <Feather name="lock" size={16} color={C.gold} />
+            <Feather name="play-circle" size={16} color={C.gold} />
           ) : (
             <Feather name="download" size={16} color={C.accent} />
           )}
@@ -131,6 +131,11 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     fontSize: 12,
     fontFamily: "Inter_400Regular",
+  },
+  resTextLocked: {
+    color: C.gold,
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
   },
   downloadBtn: {
     width: 32,

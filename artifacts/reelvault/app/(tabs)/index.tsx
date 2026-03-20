@@ -128,6 +128,7 @@ export default function DownloadScreen() {
 
   const downloadCountRef = useRef(0);
   const [adLoading, setAdLoading] = useState(false);
+  const adUnlockedForHDRef = useRef(false);
 
   // Pre-resolved CDN URL cache — populated in background after video info loads.
   // CDN URLs expire ~5 min; we conservatively cache for 4 min.
@@ -327,29 +328,25 @@ export default function DownloadScreen() {
   const handleDownload = async (quality: VideoQuality) => {
     if (!videoInfo) return;
 
-    if (quality.isHD && !isPremium) {
-      setAdLoading(true);
+    if (quality.isHD && !isPremium && !adUnlockedForHDRef.current) {
       Alert.alert(
-        "Unlock HD/4K for Free",
-        "Watch a short ad to download in HD/4K quality.",
+        "🎬 Unlock HD/4K — Watch 1 Ad",
+        "Watch a short ad to download this video in HD or 4K quality.",
         [
           {
             text: "Watch Ad",
             onPress: async () => {
-              setAdLoading(false);
               const earned = await showRewardedAd();
               if (earned) {
-                handleDownload(quality);
+                adUnlockedForHDRef.current = true;
+                await handleDownload(quality);
+                adUnlockedForHDRef.current = false;
               } else {
                 Alert.alert("Ad Skipped", "Watch the full ad to unlock HD/4K download.");
               }
             },
           },
-          {
-            text: "Cancel",
-            style: "cancel",
-            onPress: () => setAdLoading(false),
-          },
+          { text: "Cancel", style: "cancel" },
         ]
       );
       return;
@@ -787,10 +784,10 @@ export default function DownloadScreen() {
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <LinkBLogo size={44} />
-          <View>
-            <Text style={styles.appName}>LinkB Downloader</Text>
-            <Text style={styles.tagline}>Download any video, anywhere</Text>
+          <LinkBLogo size={40} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.appName} numberOfLines={1} adjustsFontSizeToFit>LinkB Downloader</Text>
+            <Text style={styles.tagline} numberOfLines={1}>Download any video, anywhere</Text>
           </View>
         </View>
         {isPremium ? (
@@ -1344,8 +1341,8 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
-  appName: { color: C.text, fontSize: 22, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
-  tagline: { color: C.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
+  appName: { color: C.text, fontSize: 18, fontFamily: "Inter_700Bold", letterSpacing: -0.3 },
+  tagline: { color: C.textMuted, fontSize: 11, fontFamily: "Inter_400Regular" },
   premiumBadge: {
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: "#2A1A00", paddingHorizontal: 10, paddingVertical: 6,
