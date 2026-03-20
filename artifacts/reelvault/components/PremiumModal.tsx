@@ -44,7 +44,7 @@ function isValidUTR(utr: string): boolean {
 
 export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
   const insets = useSafeAreaInsets();
-  const { unlockPremium } = useApp();
+  const { unlockPremium, grantAdReward } = useApp();
   const [step, setStep] = useState<"info" | "payment">("info");
   const [adLoading, setAdLoading] = useState(false);
   const [utr, setUtr] = useState("");
@@ -104,17 +104,21 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
     try {
       const earned = await showRewardedAd();
       if (earned) {
+        grantAdReward();
         handleClose();
         if (onAdEarned) {
           onAdEarned();
         } else {
-          Alert.alert("Ad Watched!", "You can now use one premium feature for free.");
+          Alert.alert(
+            "Ad Dekh Li!",
+            "Ab tum ek baar koi bhi premium feature use kar sakte ho — HD quality download karo ya video trim karo."
+          );
         }
       } else {
-        Alert.alert("Ad Skipped", "Watch the full ad to unlock one premium feature.");
+        Alert.alert("Ad Skip Ho Gayi", "Ek premium feature unlock karne ke liye poori ad dekhni hogi.");
       }
     } catch {
-      Alert.alert("Error", "Could not load the ad. Please try again.");
+      Alert.alert("Error", "Ad load nahi hui. Dobara try karo.");
     } finally {
       setAdLoading(false);
     }
@@ -183,7 +187,7 @@ export function PremiumModal({ visible, onClose, onAdEarned }: Props) {
                   <Feather name="play-circle" size={18} color={C.accent} />
                 )}
                 <Text style={styles.watchAdBtnText}>
-                  {adLoading ? "Loading Ad…" : "Watch Ad — Free 24h Access"}
+                  {adLoading ? "Loading Ad…" : "Ad Dekho — 1 Premium Feature Free"}
                 </Text>
               </Pressable>
 

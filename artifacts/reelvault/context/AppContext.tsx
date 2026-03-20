@@ -45,6 +45,10 @@ type AppContextType = {
   isPremium: boolean;
   premiumExpiry: number | null;
   unlockPremium: () => void;
+  unlockPremiumOnce: () => void;
+  adEarnedOnce: boolean;
+  grantAdReward: () => void;
+  consumeAdReward: () => void;
   history: DownloadHistoryItem[];
   addToHistory: (item: Omit<DownloadHistoryItem, "id" | "downloadedAt">) => void;
   clearHistory: () => void;
@@ -63,6 +67,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isPremium, setIsPremium] = useState(false);
   const [premiumExpiry, setPremiumExpiry] = useState<number | null>(null);
   const [history, setHistory] = useState<DownloadHistoryItem[]>([]);
+  const [adEarnedOnce, setAdEarnedOnce] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -100,12 +105,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(PREMIUM_EXPIRY_KEY, expiry.toString());
   }, []);
 
-  // Grants 24 hours of Premium — triggered by watching a rewarded ad.
   const unlockPremiumOnce = useCallback(async () => {
     const expiry = Date.now() + ONE_DAY_MS;
     setIsPremium(true);
     setPremiumExpiry(expiry);
     await AsyncStorage.setItem(PREMIUM_EXPIRY_KEY, expiry.toString());
+  }, []);
+
+  const grantAdReward = useCallback(() => {
+    setAdEarnedOnce(true);
+  }, []);
+
+  const consumeAdReward = useCallback(() => {
+    setAdEarnedOnce(false);
   }, []);
 
   const addToHistory = useCallback(
@@ -139,7 +151,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppContext.Provider
-      value={{ isPremium, premiumExpiry, unlockPremium, unlockPremiumOnce, history, addToHistory, clearHistory, removeFromHistory }}
+      value={{
+        isPremium,
+        premiumExpiry,
+        unlockPremium,
+        unlockPremiumOnce,
+        adEarnedOnce,
+        grantAdReward,
+        consumeAdReward,
+        history,
+        addToHistory,
+        clearHistory,
+        removeFromHistory,
+      }}
     >
       {children}
     </AppContext.Provider>

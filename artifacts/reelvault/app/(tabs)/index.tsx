@@ -86,7 +86,7 @@ function generateHashtags(title: string, platform: string): string {
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isPremium, addToHistory } = useApp();
+  const { isPremium, addToHistory, adEarnedOnce, consumeAdReward } = useApp();
   const { autoUrl, shareText } = useLocalSearchParams<{ autoUrl?: string; shareText?: string }>();
   const {
     fetchPreview,
@@ -347,13 +347,13 @@ export default function DownloadScreen() {
   const handleDownload = async (quality: VideoQuality) => {
     if (!videoInfo) return;
 
-    if (quality.isHD && !isPremium && !adUnlockedForHDRef.current) {
+    if (quality.isHD && !isPremium && !adUnlockedForHDRef.current && !adEarnedOnce) {
       Alert.alert(
-        "🎬 Unlock HD/4K — Watch 1 Ad",
-        "Watch a short ad to download this video in HD or 4K quality.",
+        "🎬 HD/4K Unlock Karo — 1 Ad Dekho",
+        "Ek short ad dekho aur HD ya 4K quality mein download karo.",
         [
           {
-            text: "Watch Ad",
+            text: "Ad Dekho",
             onPress: async () => {
               const earned = await showRewardedAd();
               if (earned) {
@@ -361,7 +361,7 @@ export default function DownloadScreen() {
                 await handleDownload(quality);
                 adUnlockedForHDRef.current = false;
               } else {
-                Alert.alert("Ad Skipped", "Watch the full ad to unlock HD/4K download.");
+                Alert.alert("Ad Skip Ho Gayi", "HD/4K download karne ke liye poori ad dekhni hogi.");
               }
             },
           },
@@ -369,6 +369,10 @@ export default function DownloadScreen() {
         ]
       );
       return;
+    }
+
+    if (quality.isHD && !isPremium && adEarnedOnce) {
+      consumeAdReward();
     }
 
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -780,19 +784,24 @@ export default function DownloadScreen() {
   const handleTrim = () => {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (adEarnedOnce) {
+      consumeAdReward();
+      router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl, adUnlocked: "1" } });
+      return;
+    }
     if (!isPremium) {
       Alert.alert(
-        "Unlock Trim for Free",
-        "Watch a short ad to use the Trim feature.",
+        "Trim Unlock Karo",
+        "Ek short ad dekho aur Trim feature free use karo.",
         [
           {
-            text: "Watch Ad",
+            text: "Ad Dekho",
             onPress: async () => {
               const earned = await showRewardedAd();
               if (earned) {
                 router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl, adUnlocked: "1" } });
               } else {
-                Alert.alert("Ad Skipped", "Watch the full ad to unlock the Trim feature.");
+                Alert.alert("Ad Skip Ho Gayi", "Trim feature unlock karne ke liye poori ad dekhni hogi.");
               }
             },
           },
@@ -1085,8 +1094,8 @@ export default function DownloadScreen() {
                     <Feather name="scissors" size={18} color={C.gold} />
                   </View>
                   <Text style={styles.toolTitle}>Trim</Text>
-                  <Text style={styles.toolDesc}>{isPremium ? "Cut video" : "Premium"}</Text>
-                  {!isPremium && (
+                  <Text style={styles.toolDesc}>{isPremium || adEarnedOnce ? "Cut video" : "Premium"}</Text>
+                  {!isPremium && !adEarnedOnce && (
                     <View style={{ position: "absolute", top: 8, right: 8 }}>
                       <MaterialCommunityIcons name="crown" size={12} color={C.gold} />
                     </View>
@@ -1130,7 +1139,17 @@ export default function DownloadScreen() {
             <View style={styles.qualitiesSection}>
               <Text style={styles.sectionLabel}>Choose Quality</Text>
 
-              {!isPremium ? (
+              {isPremium ? (
+                <Animated.View entering={FadeIn} style={styles.cleanBanner}>
+                  <Feather name="check-circle" size={14} color={C.success} />
+                  <Text style={styles.cleanBannerText}>Premium — full quality, no watermark, all resolutions</Text>
+                </Animated.View>
+              ) : adEarnedOnce ? (
+                <Animated.View entering={FadeIn} style={[styles.cleanBanner, { borderColor: C.gold + "50", backgroundColor: "#1A1000" }]}>
+                  <MaterialCommunityIcons name="play-circle" size={14} color={C.gold} />
+                  <Text style={[styles.cleanBannerText, { color: C.gold }]}>Ad reward active — 1 premium feature use bacha hai</Text>
+                </Animated.View>
+              ) : (
                 <Animated.View entering={FadeIn} style={styles.watermarkBanner}>
                   <View style={styles.watermarkLeft}>
                     <MaterialCommunityIcons name="crown-outline" size={16} color={C.gold} />
@@ -1144,11 +1163,6 @@ export default function DownloadScreen() {
                     <Text style={styles.upgradeBtnText}>Upgrade</Text>
                   </Pressable>
                 </Animated.View>
-              ) : (
-                <Animated.View entering={FadeIn} style={styles.cleanBanner}>
-                  <Feather name="check-circle" size={14} color={C.success} />
-                  <Text style={styles.cleanBannerText}>Premium — full quality, no watermark, all resolutions</Text>
-                </Animated.View>
               )}
 
               <View style={styles.qualitiesList}>
@@ -1156,7 +1170,7 @@ export default function DownloadScreen() {
                   <QualityRow
                     key={q.formatId}
                     quality={q}
-                    isPremiumUser={isPremium}
+                    isPremiumUser={isPremium || adEarnedOnce}
                     onDownload={handleDownload}
                     onRequirePremium={() => setShowPremiumModal(true)}
                   />
