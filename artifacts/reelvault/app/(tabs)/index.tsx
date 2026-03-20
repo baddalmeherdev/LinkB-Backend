@@ -228,23 +228,21 @@ export default function DownloadScreen() {
         if (info) {
           setVideoInfo(info);
           setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
-          // Pre-resolve CDN URL only for premium users (free users go through /stream for watermark)
+          // Pre-resolve CDN URL in background for all users — enables 2-4s fast download
           preResolvedRef.current = null;
-          if (isPremium) {
-            const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
-              ?? info.qualities.find((q) => !q.isAudioOnly);
-            if (bestQ) {
-              getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((res) => {
-                if (res) {
-                  preResolvedRef.current = {
-                    formatId: bestQ.formatId,
-                    directUrl: res.directUrl,
-                    filename: res.filename,
-                    expires: Date.now() + 4 * 60 * 1000,
-                  };
-                }
-              }).catch(() => {});
-            }
+          const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
+            ?? info.qualities.find((q) => !q.isAudioOnly);
+          if (bestQ) {
+            getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((res) => {
+              if (res) {
+                preResolvedRef.current = {
+                  formatId: bestQ.formatId,
+                  directUrl: res.directUrl,
+                  filename: res.filename,
+                  expires: Date.now() + 4 * 60 * 1000,
+                };
+              }
+            }).catch(() => {});
           }
         }
       }, 700);
@@ -300,7 +298,13 @@ export default function DownloadScreen() {
           parsed.searchParams.get("text"),
           parsed.searchParams.get("shareText"),
           parsed.searchParams.get("shared_url"),
+          parsed.searchParams.get("q"),
+          parsed.searchParams.get("link"),
         ];
+        // Also try to extract URL from the full rawUrl string
+        const fullExtract = extractUrl(rawUrl);
+        if (fullExtract) candidates.push(fullExtract);
+
         for (const candidate of candidates) {
           if (candidate) {
             const extracted = extractUrl(candidate);
@@ -313,8 +317,16 @@ export default function DownloadScreen() {
       } catch {}
     };
 
-    // Cold start — app was opened via intent
-    Linking.getInitialURL().then(handleIncomingUrl).catch(() => {});
+    // Cold start — app was opened via intent. Retry after delay for Android share intent.
+    Linking.getInitialURL().then((u) => {
+      handleIncomingUrl(u);
+      // Android sometimes delivers the intent URL slightly late — retry after 800ms
+      if (!u) {
+        setTimeout(() => {
+          Linking.getInitialURL().then(handleIncomingUrl).catch(() => {});
+        }, 800);
+      }
+    }).catch(() => {});
 
     // Warm start — URL arrives while app is already running
     const subscription = Linking.addEventListener("url", ({ url }) =>
@@ -364,22 +376,20 @@ export default function DownloadScreen() {
       setVideoInfo(info);
       setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
       preResolvedRef.current = null;
-      // Pre-resolve CDN URL only for premium users (free users use /stream for watermark)
-      if (isPremium) {
-        const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
-          ?? info.qualities.find((q) => !q.isAudioOnly);
-        if (bestQ) {
-          getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((r) => {
-            if (r) {
-              preResolvedRef.current = {
-                formatId: bestQ.formatId,
-                directUrl: r.directUrl,
-                filename: r.filename,
-                expires: Date.now() + 4 * 60 * 1000,
-              };
-            }
-          }).catch(() => {});
-        }
+      // Pre-resolve CDN URL in background for all users — enables 2-4s fast download
+      const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
+        ?? info.qualities.find((q) => !q.isAudioOnly);
+      if (bestQ) {
+        getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((r) => {
+          if (r) {
+            preResolvedRef.current = {
+              formatId: bestQ.formatId,
+              directUrl: r.directUrl,
+              filename: r.filename,
+              expires: Date.now() + 4 * 60 * 1000,
+            };
+          }
+        }).catch(() => {});
       }
     }
   }, [url, fetchPreview, fetchVideoInfo, clearError, isPremium]);
@@ -541,16 +551,22 @@ export default function DownloadScreen() {
             ?? getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
           filename = direct?.filename ?? fallbackFilename;
         } else {
-          // Free users: try direct CDN URL first (fast 2-4s), fall back to server stream
-          const directResult = await getDirectDownloadUrl(
-            videoInfo.originalUrl, quality, videoInfo.title, isPremium
-          );
-          if (directResult?.directUrl) {
-            downloadUrl = directResult.directUrl;
-            filename = directResult.filename;
+          // Free users: use pre-resolved CDN URL if available, else resolve now, then fall back to stream
+          const cached = preResolvedRef.current;
+          if (cached && cached.formatId === quality.formatId && cached.expires > Date.now()) {
+            downloadUrl = cached.directUrl;
+            filename = cached.filename;
           } else {
-            downloadUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
-            filename = fallbackFilename;
+            const directResult = await getDirectDownloadUrl(
+              videoInfo.originalUrl, quality, videoInfo.title, isPremium
+            );
+            if (directResult?.directUrl) {
+              downloadUrl = directResult.directUrl;
+              filename = directResult.filename;
+            } else {
+              downloadUrl = getStreamUrl(videoInfo.originalUrl, quality, videoInfo.title, isPremium);
+              filename = fallbackFilename;
+            }
           }
         }
 
@@ -1487,9 +1503,8 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular", paddingVertical: 14,
   },
   clearBtn: { padding: 4 },
-  inputActions: { flexDirection: "row", gap: 10, flexWrap: "nowrap" },
+  inputActions: { flexDirection: "row", gap: 10 },
   pasteBtn: {
-    flexShrink: 0,
     flexDirection: "row", alignItems: "center", gap: 6,
     backgroundColor: C.surfaceElevated, paddingHorizontal: 14, paddingVertical: 12,
     borderRadius: 12, borderWidth: 1, borderColor: C.surfaceBorder,
@@ -1497,12 +1512,12 @@ const styles = StyleSheet.create({
   pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium" },
   fetchBtn: {
     flex: 1, flexDirection: "row", alignItems: "center",
-    justifyContent: "center", gap: 8,
+    justifyContent: "center", gap: 8, overflow: "hidden",
     backgroundColor: C.accent, paddingVertical: 13, borderRadius: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   fetchBtnDisabled: { opacity: 0.45 },
-  fetchBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold", flexShrink: 0 },
+  fetchBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
   errorBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: "#1A0000", borderRadius: 10, padding: 12,
@@ -1657,30 +1672,30 @@ const styles = StyleSheet.create({
   emptyTitle: { color: C.text, fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center" },
   emptySubtitle: {
     color: C.textSecondary, fontSize: 14, fontFamily: "Inter_400Regular",
-    textAlign: "center", lineHeight: 22, maxWidth: 300,
+    textAlign: "center", lineHeight: 22,
   },
   featuresRow: {
+    width: "100%",
     flexDirection: "row", gap: 8, marginTop: 4, flexWrap: "wrap", justifyContent: "center",
   },
   featureChip: {
-    flexShrink: 0,
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.surfaceElevated, paddingLeft: 12, paddingRight: 16, paddingVertical: 7,
+    backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 7,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium", flexShrink: 0 },
+  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium" },
   supportedPlatforms: {
+    width: "100%",
     flexDirection: "row", gap: 8, marginTop: 4, flexWrap: "wrap",
-    justifyContent: "center", paddingHorizontal: 8,
+    justifyContent: "center", paddingHorizontal: 4,
   },
   platformPill: {
-    flexShrink: 0,
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.surfaceElevated, paddingLeft: 12, paddingRight: 16, paddingVertical: 6,
+    backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
   },
-  platformDot: { width: 6, height: 6, borderRadius: 3, flexShrink: 0 },
-  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold", flexShrink: 0 },
+  platformDot: { width: 6, height: 6, borderRadius: 3 },
+  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold" },
   disclaimerBox: {
     flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 16,
     backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 10,
