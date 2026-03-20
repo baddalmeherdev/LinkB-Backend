@@ -1,4 +1,17 @@
-const { withAppBuildGradle, withMainApplication, withDangerousMod } = require('@expo/config-plugins');
+let withAppBuildGradle, withMainApplication, withDangerousMod;
+try {
+  const cp = require('@expo/config-plugins');
+  withAppBuildGradle = cp.withAppBuildGradle;
+  withMainApplication = cp.withMainApplication;
+  withDangerousMod = cp.withDangerousMod;
+} catch (e) {
+  // Try resolving from the expo package which always has config-plugins as a dep
+  const expoDir = require.resolve('expo/package.json').replace('/package.json', '');
+  const cp = require(require.resolve('@expo/config-plugins', { paths: [expoDir] }));
+  withAppBuildGradle = cp.withAppBuildGradle;
+  withMainApplication = cp.withMainApplication;
+  withDangerousMod = cp.withDangerousMod;
+}
 const fs = require('fs');
 const path = require('path');
 
