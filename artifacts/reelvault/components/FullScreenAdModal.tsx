@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Modal,
   View,
@@ -109,6 +109,15 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
   const [webviewKey, setWebviewKey] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Always keep a ref to the latest onComplete so the timer closure is never stale
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; });
+
+  // Stable wrapper so JSX callbacks don't recreate on every render
+  const handleComplete = useCallback((earned: boolean) => {
+    onCompleteRef.current(earned);
+  }, []);
+
   useEffect(() => {
     if (!visible) {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -127,7 +136,8 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
           if (timerRef.current) clearInterval(timerRef.current);
           setCanClose(true);
           if (mode === "interstitial") {
-            setTimeout(() => onComplete(true), 500);
+            // Use ref so interstitial auto-close always calls the current callback
+            setTimeout(() => onCompleteRef.current(true), 500);
           }
           return 0;
         }
@@ -152,7 +162,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
       animationType="slide"
       statusBarTranslucent
       onRequestClose={() => {
-        if (canClose) onComplete(isRewarded);
+        if (canClose) handleComplete(isRewarded);
       }}
     >
       <View style={styles.root}>
@@ -174,7 +184,7 @@ export function FullScreenAdModal({ visible, mode, onComplete }: Props) {
           {canClose ? (
             <Pressable
               style={styles.closeBtn}
-              onPress={() => onComplete(isRewarded)}
+              onPress={() => handleComplete(isRewarded)}
               android_ripple={{ color: "#ffffff22", radius: 24 }}
             >
               <Text style={styles.closeBtnText}>

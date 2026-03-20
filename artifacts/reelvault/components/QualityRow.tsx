@@ -45,8 +45,11 @@ export function QualityRow({ quality, isPremiumUser, onDownload, onRequirePremiu
     scale.value = withSpring(0.96, {}, () => { scale.value = withSpring(1); });
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
-    await onDownload(quality);
-    setLoading(false);
+    try {
+      await onDownload(quality);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const icon = quality.isAudioOnly

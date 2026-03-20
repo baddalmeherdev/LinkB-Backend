@@ -426,8 +426,11 @@ export default function DownloadScreen() {
       const earned = await showRewardedAdUnified(() => showAdModal("rewarded"));
       if (earned) {
         adUnlockedForHDRef.current = true;
-        await handleDownload(quality);
-        adUnlockedForHDRef.current = false;
+        try {
+          await handleDownload(quality);
+        } finally {
+          adUnlockedForHDRef.current = false;
+        }
       }
       return;
     }
