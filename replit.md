@@ -155,6 +155,20 @@ pnpm --filter @workspace/api-server run dev
 pnpm --filter @workspace/reelvault run dev
 ```
 
+## Dependencies (Fixed)
+
+- `expo-build-properties`: `~1.0.10` (correct for Expo SDK 54; was incorrectly `^55.0.10`)
+- `react-native-keyboard-controller`: `1.18.5` (pinned to Expo SDK 54 expected version)
+- `expo-media-library`: `~18.2.1` (added for gallery/album saving on Android)
+- `expo-file-system`: imported from `expo-file-system/legacy` to use stable DownloadResumable API
+
+## Gallery Saving
+
+After each successful native download (index.tsx, trim.tsx), the file is saved to the device gallery via `expo-media-library`:
+- Videos → "LinkB Downloads" album
+- Audio → "LinkB Audio" album
+- Permission is requested at download time (`MediaLibrary.requestPermissionsAsync`)
+
 ## Known Limitations
 
 - Reddit: requires account cookies (SERVICE_UNAVAILABLE expected)

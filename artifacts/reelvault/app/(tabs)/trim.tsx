@@ -2,7 +2,8 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinkBLogo } from "@/components/LinkBLogo";
 import { showRewardedAd } from "@/utils/unityAds";
 import * as Haptics from "expo-haptics";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState, useCallback } from "react";
@@ -202,7 +203,7 @@ export default function TrimScreen() {
         clearInterval(fakeTimer);
         setTrimProgress(1);
 
-        const blob = new Blob(chunks, { type: "video/mp4" });
+        const blob = new Blob(chunks as BlobPart[], { type: "video/mp4" });
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = blobUrl;
@@ -235,7 +236,19 @@ export default function TrimScreen() {
         if (result?.uri) {
           setTrimDone(true);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          Alert.alert("Done!", `Trimmed video saved to your device.`);
+          try {
+            const { status } = await MediaLibrary.requestPermissionsAsync();
+            if (status === "granted") {
+              const asset = await MediaLibrary.createAssetAsync(result.uri);
+              const album = await MediaLibrary.getAlbumAsync("LinkB Downloads");
+              if (album == null) {
+                await MediaLibrary.createAlbumAsync("LinkB Downloads", asset, false);
+              } else {
+                await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+              }
+            }
+          } catch (_) {}
+          Alert.alert("Done!", `Trimmed video saved to your gallery.`);
         }
       }
     } catch (e: any) {

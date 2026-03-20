@@ -142,13 +142,13 @@ export default function HistoryScreen() {
 
   const handleRedownload = (item: DownloadHistoryItem) => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push({ pathname: "/(tabs)/", params: { autoUrl: item.url } });
+    router.push({ pathname: "/", params: { autoUrl: item.url } });
   };
 
   const handlePlay = (item: DownloadHistoryItem) => {
     if (!item.localUri) {
       // No local file — go to download screen
-      router.push({ pathname: "/(tabs)/", params: { autoUrl: item.url } });
+      router.push({ pathname: "/", params: { autoUrl: item.url } });
       return;
     }
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

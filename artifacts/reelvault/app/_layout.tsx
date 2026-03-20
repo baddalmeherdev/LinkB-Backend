@@ -81,12 +81,12 @@ function registerWebFonts() {
     try {
       const ff = new FontFace(family, src, desc);
       // Add BEFORE load so fontfaceobserver sees the font in document.fonts
-      (document.fonts as FontFaceSet).add(ff);
+      (document.fonts as any).add(ff);
       ff.load().catch(() => {
         // If all local() sources fail, fall back to guaranteed Arial
         try {
           const fallback = new FontFace(family, "local('Arial')", desc);
-          (document.fonts as FontFaceSet).add(fallback);
+          (document.fonts as any).add(fallback);
           fallback.load().catch(() => {});
         } catch { /* ignore */ }
       });

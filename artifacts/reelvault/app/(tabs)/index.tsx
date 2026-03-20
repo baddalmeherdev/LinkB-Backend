@@ -1,10 +1,11 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinkBLogo } from "@/components/LinkBLogo";
 import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -138,6 +139,26 @@ export default function DownloadScreen() {
     filename: string;
     expires: number;
   } | null>(null);
+
+  // Save a downloaded file to the device gallery (media library).
+  // Silently no-ops on web or if permission is denied.
+  const saveToGallery = async (uri: string, isAudio: boolean): Promise<void> => {
+    if (Platform.OS === "web") return;
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") return;
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      const albumName = isAudio ? "LinkB Audio" : "LinkB Downloads";
+      const album = await MediaLibrary.getAlbumAsync(albumName);
+      if (album == null) {
+        await MediaLibrary.createAlbumAsync(albumName, asset, false);
+      } else {
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      }
+    } catch (e) {
+      console.warn("[Gallery] Could not save to gallery:", e);
+    }
+  };
 
   const inputStyle = useAnimatedStyle(() => ({
     borderColor: `rgba(59, 130, 246, ${inputBorderAnim.value})`,
@@ -413,7 +434,7 @@ export default function DownloadScreen() {
         setDownloadPhase("done");
 
         const mimeType = quality.isAudioOnly ? "audio/mpeg" : "video/mp4";
-        const blob = new Blob(chunks, { type: mimeType });
+        const blob = new Blob(chunks as BlobPart[], { type: mimeType });
         const blobUrl = URL.createObjectURL(blob);
 
         // Trigger browser download — stays in app, no new tab
@@ -505,6 +526,7 @@ export default function DownloadScreen() {
           setNativeFileUri(savedUri);
           setDownloadedUri(savedUri);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          await saveToGallery(savedUri, quality.isAudioOnly);
         }
 
         await addToHistory({
@@ -545,6 +567,7 @@ export default function DownloadScreen() {
             if (savedUri) {
               setNativeFileUri(savedUri);
               setDownloadedUri(savedUri);
+              await saveToGallery(savedUri, quality.isAudioOnly);
             }
             await addToHistory({
               title: videoInfo.title,
@@ -1645,5 +1668,72 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
     paddingBottom: 2,
+  },
+  downloadOverlay: {
+    position: "absolute",
+    bottom: 90,
+    left: 16,
+    right: 16,
+    backgroundColor: "#1A1A2E",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(59,130,246,0.3)",
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 100,
+  },
+  downloadOverlayContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    gap: 12,
+  },
+  downloadOverlayLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  downloadDoneIcon: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  downloadOverlayText: {
+    flex: 1,
+    gap: 6,
+  },
+  downloadOverlayTitle: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  downloadProgressBar: {
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  downloadProgressFill: {
+    height: 4,
+    backgroundColor: "#3B82F6",
+    borderRadius: 2,
+  },
+  downloadOverlaySub: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+  },
+  downloadCancelBtn: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 14,
   },
 });
