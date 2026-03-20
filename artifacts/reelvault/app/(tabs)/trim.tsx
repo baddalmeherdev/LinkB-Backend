@@ -93,7 +93,7 @@ export default function TrimScreen() {
       setUrl(paramUrl);
       loadVideo(paramUrl);
     }
-  }, [paramUrl]);
+  }, [paramUrl, loadVideo]);
 
   const handleUrlChange = (text: string) => {
     setUrl(text);

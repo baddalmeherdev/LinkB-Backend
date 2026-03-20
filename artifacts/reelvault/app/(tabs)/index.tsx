@@ -136,6 +136,11 @@ export default function DownloadScreen() {
   const [adLoading, setAdLoading] = useState(false);
   const adUnlockedForHDRef = useRef(false);
 
+  // Keep stable refs to the latest handlers so effects/callbacks with empty
+  // deps always call the current version (avoids stale-closure bugs).
+  const handleDownloadRef = useRef<((quality: VideoQuality) => Promise<void>) | null>(null);
+  const handleUrlChangeRef = useRef<((text: string) => void) | null>(null);
+
   // ── Full-screen ad modal (rewarded / interstitial) ──────────────────────
   const [adModalVisible, setAdModalVisible] = useState(false);
   const [adModalMode, setAdModalMode] = useState<"rewarded" | "interstitial">("interstitial");
@@ -248,6 +253,8 @@ export default function DownloadScreen() {
       }, 700);
     }
   };
+  // Keep the ref in sync so Linking/autoUrl effects always call the latest version
+  handleUrlChangeRef.current = handleUrlChange;
 
   useEffect(() => {
     return () => {
@@ -287,7 +294,7 @@ export default function DownloadScreen() {
       // Direct URL shared (e.g. YouTube link via share sheet or VIEW intent)
       const directUrl = extractUrl(rawUrl);
       if (directUrl) {
-        handleUrlChange(directUrl);
+        handleUrlChangeRef.current?.(directUrl);
         return;
       }
       // Deep-link URL may carry the target as a query param (linkbdownloader://...)
@@ -309,7 +316,7 @@ export default function DownloadScreen() {
           if (candidate) {
             const extracted = extractUrl(candidate);
             if (extracted) {
-              handleUrlChange(extracted);
+              handleUrlChangeRef.current?.(extracted);
               return;
             }
           }
@@ -336,15 +343,17 @@ export default function DownloadScreen() {
   }, []);
 
   useEffect(() => {
+    // Use the ref so the latest handleUrlChange is always called even though
+    // this effect only re-runs when autoUrl/shareText change (not on every render).
     if (autoUrl && typeof autoUrl === "string" && isValidUrl(autoUrl)) {
-      handleUrlChange(autoUrl);
+      handleUrlChangeRef.current?.(autoUrl);
       return;
     }
     // Handle text shared from PWA share target that may contain a URL
     if (shareText && typeof shareText === "string") {
       const match = shareText.match(/https?:\/\/[^\s]+/);
       if (match && isValidUrl(match[0])) {
-        handleUrlChange(match[0]);
+        handleUrlChangeRef.current?.(match[0]);
       }
     }
   }, [autoUrl, shareText]);
@@ -683,6 +692,9 @@ export default function DownloadScreen() {
     }
   };
 
+  // Always keep the ref up-to-date so stable callbacks never call a stale version
+  handleDownloadRef.current = handleDownload;
+
   const handleShare = async () => {
     if (!videoInfo) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -774,7 +786,9 @@ export default function DownloadScreen() {
     const q = pendingAdQualityRef.current;
     if (q) {
       adUnlockedForHDRef.current = true;
-      handleDownload(q).finally(() => { adUnlockedForHDRef.current = false; });
+      // Use the ref so we always call the latest handleDownload even though
+      // this callback has empty deps (needed to keep it stable for PremiumModal).
+      handleDownloadRef.current?.(q).finally(() => { adUnlockedForHDRef.current = false; });
       pendingAdQualityRef.current = null;
     }
   }, []);
@@ -1339,7 +1353,13 @@ export default function DownloadScreen() {
           entering={FadeIn}
           style={[
             styles.downloadOverlay,
-            { bottom: isPremium ? (insets.bottom + 65) : (insets.bottom + 155) },
+            {
+              // On web insets.bottom is always 0; the tab bar is 72px, so floor
+              // at 80 so the overlay never slides behind it for premium users.
+              bottom: isPremium
+                ? (Platform.OS === "web" ? 80 : insets.bottom + 65)
+                : (Platform.OS === "web" ? 155 : insets.bottom + 155),
+            },
           ]}
         >
           <View style={styles.downloadOverlayContent}>

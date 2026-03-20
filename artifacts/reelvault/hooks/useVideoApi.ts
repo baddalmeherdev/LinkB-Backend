@@ -1,22 +1,13 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { VideoInfo, VideoQuality } from "@/context/AppContext";
 import type { PreviewData } from "@/components/LinkPreviewCard";
 
 const BASE_URL = "https://linkb-backend-api.onrender.com";
 
-// Maximum time to wait for a single API attempt (90 s).
-// yt-dlp can take 10-45 s on first run; we give generous room.
 const REQUEST_TIMEOUT_MS = 90_000;
 
-// Retry configuration: 2 retries after initial failure, with a back-off delay.
 const MAX_RETRIES = 2;
-const RETRY_DELAYS_MS = [2_000, 4_000]; // back-off per retry index
-
-// ---- Internal fetch helper ------------------------------------------------
-// Wraps fetch with:
-//  • A per-attempt AbortController timeout
-//  • Automatic retries on network error or server 5xx
-//  • Checks BOTH HTTP status AND body.error (heartbeat endpoints always 200)
+const RETRY_DELAYS_MS = [2_000, 4_000];
 
 async function fetchWithRetry(
   url: string,
@@ -45,14 +36,11 @@ async function fetchWithRetry(
         data = {};
       }
 
-      // Retry on 5xx server errors (but not 4xx — those are caller's problem)
       if (res.status >= 500 && attempt < retries) {
         lastErr = new Error(`Server error ${res.status}`);
         continue;
       }
 
-      // Heartbeat endpoints commit to 200 and embed errors in body.
-      // Treat body.error exactly like a non-2xx status.
       const bodyHasError = typeof data.error === "string";
       const ok = res.ok && !bodyHasError;
 
@@ -61,9 +49,6 @@ async function fetchWithRetry(
       clearTimeout(timeoutId);
       lastErr = err;
 
-      // Don't retry on 4xx-equivalent AbortErrors from explicit user cancel
-      // (identified elsewhere), but DO retry on AbortError caused by our timeout
-      // and on plain network errors (TypeError).
       const isRetryable =
         (err instanceof Error && err.name === "AbortError") ||
         (err instanceof TypeError);
@@ -78,7 +63,6 @@ async function fetchWithRetry(
 }
 
 function friendlyError(err: unknown, data?: Record<string, unknown>): string {
-  // Body-level error message takes priority
   if (data?.message && typeof data.message === "string") return data.message;
 
   if (err instanceof Error) {
@@ -92,15 +76,13 @@ function friendlyError(err: unknown, data?: Record<string, unknown>): string {
   return "Something went wrong. Please try again.";
 }
 
-// ---- Public hook ----------------------------------------------------------
-
 export function useVideoApi() {
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSlowRequest, setIsSlowRequest] = useState(false);
 
-  const fetchPreview = async (url: string): Promise<PreviewData | null> => {
+  const fetchPreview = useCallback(async (url: string): Promise<PreviewData | null> => {
     setIsLoadingPreview(true);
     setIsSlowRequest(false);
     setError(null);
@@ -130,9 +112,9 @@ export function useVideoApi() {
       setIsLoadingPreview(false);
       setIsSlowRequest(false);
     }
-  };
+  }, []);
 
-  const fetchVideoInfo = async (url: string): Promise<VideoInfo | null> => {
+  const fetchVideoInfo = useCallback(async (url: string): Promise<VideoInfo | null> => {
     setIsLoadingInfo(true);
     setIsSlowRequest(false);
     setError(null);
@@ -162,14 +144,14 @@ export function useVideoApi() {
       setIsLoadingInfo(false);
       setIsSlowRequest(false);
     }
-  };
+  }, []);
 
-  const getPlayUrl = (videoUrl: string): string => {
+  const getPlayUrl = useCallback((videoUrl: string): string => {
     const params = new URLSearchParams({ url: videoUrl });
     return `${BASE_URL}/api/video/play?${params.toString()}`;
-  };
+  }, []);
 
-  const getStreamUrl = (
+  const getStreamUrl = useCallback((
     videoUrl: string,
     quality: VideoQuality,
     title: string,
@@ -183,11 +165,9 @@ export function useVideoApi() {
       title,
     });
     return `${BASE_URL}/api/video/stream?${params.toString()}`;
-  };
+  }, []);
 
-  // Resolves the direct CDN download URL (fast path — no server-side download).
-  // Falls back to null if unsupported (caller should fall back to /stream).
-  const getDirectDownloadUrl = async (
+  const getDirectDownloadUrl = useCallback(async (
     videoUrl: string,
     quality: VideoQuality,
     title: string,
@@ -223,11 +203,9 @@ export function useVideoApi() {
     } catch {
       return null;
     }
-  };
+  }, []);
 
-  // Returns a URL that the server resolves + pipes directly to the client.
-  // No temp file, no new tab — the browser downloads in-app via fetch→blob.
-  const getPipeUrl = (
+  const getPipeUrl = useCallback((
     videoUrl: string,
     quality: VideoQuality,
     title: string,
@@ -243,9 +221,9 @@ export function useVideoApi() {
     });
     if (preResolvedDirectUrl) params.set("directUrl", preResolvedDirectUrl);
     return `${BASE_URL}/api/video/pipe?${params.toString()}`;
-  };
+  }, []);
 
-  const clearError = () => setError(null);
+  const clearError = useCallback(() => setError(null), []);
 
   return {
     fetchPreview,
