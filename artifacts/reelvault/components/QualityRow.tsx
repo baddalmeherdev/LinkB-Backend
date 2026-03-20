@@ -65,12 +65,12 @@ export function QualityRow({ quality, isPremiumUser, onDownload, onRequirePremiu
         <View style={styles.iconWrap}>{icon}</View>
 
         <View style={styles.info}>
-          <Text style={styles.qualityText}>
+          <Text style={styles.qualityText} numberOfLines={1} ellipsizeMode="tail">
             {quality.label || quality.quality}
           </Text>
-          <Text style={[styles.resText, locked && styles.resTextLocked]}>
+          <Text style={[styles.resText, locked && styles.resTextLocked]} numberOfLines={1} ellipsizeMode="tail">
             {locked
-              ? "Tap to Watch Ad & Download"
+              ? "Watch Ad & Download"
               : `${quality.resolution !== "audio" ? quality.resolution : "Audio only"}${sizeText ? ` · ${sizeText}` : ""}`}
           </Text>
         </View>

@@ -159,6 +159,8 @@ function RootLayoutNav() {
 function NativeLayout() {
   useEffect(() => {
     initUnityAds();
+    // Wake up Render server so it's ready before user pastes a URL
+    fetch("https://linkb-backend-api.onrender.com/api/health", { method: "GET" }).catch(() => {});
   }, []);
 
   useEffect(() => {

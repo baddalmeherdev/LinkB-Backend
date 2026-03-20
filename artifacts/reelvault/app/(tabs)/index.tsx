@@ -547,6 +547,17 @@ export default function DownloadScreen() {
         }
 
         const destPath = `${FileSystem.documentDirectory}${filename}`;
+
+        // Fake progress timer — shows activity while server processes (yt-dlp + merge)
+        let fakeNativeProgress = 0;
+        let realBytesStarted = false;
+        const fakeNativeTimer = setInterval(() => {
+          if (!realBytesStarted) {
+            fakeNativeProgress = Math.min(fakeNativeProgress + 0.004, 0.35);
+            setDownloadProgress(fakeNativeProgress);
+          }
+        }, 500);
+
         const downloadResumable = FileSystem.createDownloadResumable(
           downloadUrl,
           destPath,
@@ -554,9 +565,13 @@ export default function DownloadScreen() {
           (progress) => {
             const { totalBytesWritten, totalBytesExpectedToWrite } = progress;
             if (totalBytesExpectedToWrite > 0) {
+              realBytesStarted = true;
+              clearInterval(fakeNativeTimer);
               setDownloadProgress(totalBytesWritten / totalBytesExpectedToWrite);
-            } else {
-              setDownloadProgress((p) => Math.min(p + 0.015, 0.88));
+            } else if (totalBytesWritten > 0) {
+              realBytesStarted = true;
+              clearInterval(fakeNativeTimer);
+              setDownloadProgress((p) => Math.min(p + 0.02, 0.92));
             }
             setDownloadPhase("downloading");
           }
@@ -565,6 +580,7 @@ export default function DownloadScreen() {
 
         setDownloadPhase("downloading");
         const result = await downloadResumable.downloadAsync();
+        clearInterval(fakeNativeTimer);
         setDownloadProgress(1);
         setDownloadPhase("done");
 
@@ -1273,11 +1289,11 @@ export default function DownloadScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Footer branding + banner ad — pinned below scroll content */}
+      {/* Footer branding + banner ad — always visible at very bottom for free users */}
       {!isPremium && (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom }]}>
-          <Text style={styles.footerCredit}>by @baddalmeher</Text>
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 49 }]}>
           <AdBanner />
+          <Text style={styles.footerCredit}>by @baddalmeher</Text>
         </View>
       )}
 
@@ -1295,7 +1311,13 @@ export default function DownloadScreen() {
 
       {/* Download Progress Overlay */}
       {isDownloading || downloadPhase === "done" ? (
-        <Animated.View entering={FadeIn} style={styles.downloadOverlay}>
+        <Animated.View
+          entering={FadeIn}
+          style={[
+            styles.downloadOverlay,
+            { bottom: isPremium ? (insets.bottom + 65) : (insets.bottom + 155) },
+          ]}
+        >
           <View style={styles.downloadOverlayContent}>
             <View style={styles.downloadOverlayLeft}>
               {downloadPhase === "done" ? (
@@ -1308,9 +1330,11 @@ export default function DownloadScreen() {
               <View style={styles.downloadOverlayText}>
                 <Text style={styles.downloadOverlayTitle}>
                   {downloadPhase === "preparing"
-                    ? "Preparing download…"
+                    ? "Processing on server…"
                     : downloadPhase === "downloading"
-                    ? `Downloading… ${Math.round(downloadProgress * 100)}%`
+                    ? downloadProgress < 0.36
+                      ? "Server preparing video…"
+                      : `Downloading… ${Math.round(downloadProgress * 100)}%`
                     : "Download complete!"}
                 </Text>
                 {downloadPhase === "downloading" ? (
@@ -1740,7 +1764,6 @@ const styles = StyleSheet.create({
   },
   downloadOverlay: {
     position: "absolute",
-    bottom: 90,
     left: 16,
     right: 16,
     backgroundColor: "#1A1A2E",
