@@ -55,7 +55,7 @@ function isValidTime(t: string): boolean {
 
 export default function TrimScreen() {
   const insets = useSafeAreaInsets();
-  const { isPremium } = useApp();
+  const { isPremium, unlockPremiumOnce } = useApp();
   const router = useRouter();
   const { url: paramUrl } = useLocalSearchParams<{ url?: string }>();
   const { fetchVideoInfo, isLoadingInfo, isSlowRequest } = useVideoApi();
@@ -138,12 +138,6 @@ export default function TrimScreen() {
   const handleTrimDownload = async () => {
     if (!videoInfo || !selectedQuality) return;
     if (!validateTimes()) return;
-
-    const earned = await showRewardedAd();
-    if (!earned) {
-      Alert.alert("Ad Skipped", "Please watch the full ad to unlock the Trim feature.");
-      return;
-    }
 
     const startSec = parseTimeToSeconds(startTime);
     const endSec = parseTimeToSeconds(endTime);
@@ -297,6 +291,22 @@ export default function TrimScreen() {
           >
             <MaterialCommunityIcons name="crown" size={18} color="#000" />
             <Text style={styles.upgradeBtnText}>Upgrade to Premium — ₹29/month</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.watchAdBtn, { opacity: pressed ? 0.8 : 1 }]}
+            onPress={async () => {
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              const earned = await showRewardedAd();
+              if (earned) {
+                await unlockPremiumOnce();
+              } else {
+                Alert.alert("Ad Skipped", "Watch the full ad to unlock Trim for 24 hours.");
+              }
+            }}
+          >
+            <Feather name="play-circle" size={16} color={C.accent} />
+            <Text style={styles.watchAdBtnText}>Watch Ad to Unlock for 24 hours (Free)</Text>
           </Pressable>
         </View>
       </View>
@@ -909,5 +919,23 @@ const styles = StyleSheet.create({
     color: "#000",
     fontSize: 15,
     fontFamily: "Inter_700Bold",
+  },
+  watchAdBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    width: "100%",
+    marginTop: 10,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: C.accent + "60",
+    backgroundColor: "#0D1A2A",
+  },
+  watchAdBtnText: {
+    color: C.accent,
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
   },
 });

@@ -86,7 +86,7 @@ function generateHashtags(title: string, platform: string): string {
 export default function DownloadScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isPremium, addToHistory } = useApp();
+  const { isPremium, addToHistory, unlockPremiumOnce } = useApp();
   const { autoUrl, shareText } = useLocalSearchParams<{ autoUrl?: string; shareText?: string }>();
   const {
     fetchPreview,
@@ -774,6 +774,7 @@ export default function DownloadScreen() {
             onPress: async () => {
               const earned = await showRewardedAd();
               if (earned) {
+                await unlockPremiumOnce();
                 router.push({ pathname: "/(tabs)/trim", params: { url: videoInfo.originalUrl } });
               } else {
                 Alert.alert("Ad Skipped", "Watch the full ad to unlock the Trim feature.");

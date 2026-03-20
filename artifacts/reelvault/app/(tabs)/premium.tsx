@@ -470,7 +470,7 @@ export default function PremiumScreen() {
           <View style={styles.aboutDivider} />
           <Text style={styles.aboutAppName}>LinkB Downloader</Text>
           <Text style={styles.aboutDev}>Developed by Badal Meher</Text>
-          <Text style={styles.aboutVersion}>Version 1.0.0</Text>
+          <Text style={styles.aboutVersion}>Version 1.0.1</Text>
         </View>
       </ScrollView>
     </View>

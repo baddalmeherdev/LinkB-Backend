@@ -11,166 +11,129 @@ pnpm workspace monorepo using TypeScript. LinkB Downloader is a mobile-first uni
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
 - **Mobile**: Expo SDK 54, Expo Router (file-based routing)
-- **Video engine**: yt-dlp (system Nix package — `yt-dlp`)
+- **Video engine**: yt-dlp (system Nix package)
 - **Video processing**: ffmpeg (system Nix package)
+- **Ads**: Unity Ads (native rewarded + interstitial) + Start.io (banner via WebView)
 
 ## Structure
 
 ```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   ├── api-server/         # Express API server
-│   └── reelvault/          # Expo React Native mobile app (branded as LinkB Downloader)
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts
-├── pnpm-workspace.yaml
-├── tsconfig.base.json
-├── tsconfig.json
-└── package.json
+artifacts/
+├── api-server/         # Express API server (yt-dlp + ffmpeg backend)
+└── reelvault/          # Expo React Native mobile app (branded as LinkB Downloader)
+lib/
+├── api-spec/           # OpenAPI spec + Orval codegen config
+├── api-client-react/   # Generated React Query hooks
+├── api-zod/            # Generated Zod schemas from OpenAPI
+└── db/                 # Drizzle ORM schema + DB connection
 ```
 
 ## App Identity
 
 - **App Name**: LinkB Downloader
-- **Short Name**: LinkB
-- **Slug**: linkb-downloader
-- **Scheme**: linkbdownloader
-- **Logo**: `artifacts/reelvault/components/LinkBLogo.tsx` (SVG, blue gradient + download arrow)
-- **Icon**: `artifacts/reelvault/assets/images/icon.png` (512×512 programmatically generated)
+- **Version**: 1.0.1
+- **Package**: `com.badalmeher.linkbdownloader`
+- **Scheme**: `linkbdownloader`
+- **EAS Project ID**: `5c663dee-b927-4dd7-a0e1-69265cf9032a`
+- **Logo**: `artifacts/reelvault/components/LinkBLogo.tsx`
 
 ## Features
 
 ### Core Features
 - Paste/share any video URL (YouTube, Instagram, Facebook, TikTok, Twitter, Vimeo, etc.)
+- Auto-detects URL from clipboard on paste
 - Fetch video metadata (title, thumbnail, duration, uploader)
 - Show available download qualities (Audio Only, 144p–2160p)
 - One-click download for each quality
-- Download history (AsyncStorage)
-- Built-in video preview/play
-- Share and copy link buttons
+- Download history (AsyncStorage, max 100)
+- Built-in in-app video player
+- Share downloaded file (expo-sharing) or share link
+- Auto Caption + Hashtag generator
 
-### Navigation
-- 4 tabs: Download, History, Premium, Test Mode (Browser tab hidden)
+### Navigation Tabs
+- **Download** — Main download screen
+- **History** — Download history with play/share/re-download
+- **Trim** — Video trimmer (Premium or ad-unlocked)
+- **Premium** — Upgrade screen (UPI ₹29/month)
+- Browser tab: hidden (href: null)
 
-### Advanced Features
-- PWA Share Target — app appears in Android/iOS share menu
-- Smart Share button — shares actual file when downloaded
-- Auto progress bar during download
-- AI Caption generator + Hashtag suggestions
-- Audio-only download option
+### Android Share Intent
+- App shows in Android share sheet for `text/plain` URLs
+- Intent filter: `ACTION_SEND`, `mimeType: text/plain`, category: `DEFAULT`
+- When user selects LinkB from share sheet, URL auto-loads and video info fetches
 
 ### Premium / Monetization
-- UPI payment: `winuptournament@fam` (₹99 lifetime)
-- Premium unlocks: HD (1080p, 1440p, 4K) downloads
-- Free users: up to 720p (inclusive)
+- UPI ID: `winuptournament@fam` — ₹29/month
+- Premium unlocks: HD (1080p, 1440p, 4K) downloads + Trim + no watermark
+- Free users: up to 720p, watermark, ads
 - UTR verification flow for manual payment confirmation
-- Premium state stored in AsyncStorage under `@reelvault:premium`
+- Premium stored in AsyncStorage: `@reelvault:premium_expiry`
+- `unlockPremiumOnce()` — grants 24h premium (for ad-reward unlock)
+
+### Ad System
+- **Banner ads**: Start.io via WebView — pinned at bottom, ONLY for free users
+- **Interstitial ads**: Unity Ads — shown every 3 downloads, ONLY for free users
+- **Rewarded ads**: Unity Ads — free users watch to unlock HD quality
+- **Trim unlock**: Free users watch rewarded ad → get 24h premium (`unlockPremiumOnce`) → access trim
+- Game ID: `6069290`, Placements: `Rewarded_Android`, `Interstitial_Android`
 
 ### Download Optimization
-- `--concurrent-fragments 4` and `--buffer-size 16K` on all yt-dlp calls
-- Extended format fallback chain for YouTube
-- Fragmented mp4 (fMP4) output via `ffmpeg:-movflags frag_keyframes+empty_moov+default_base_moof` — enables muxing video+audio to stdout without seekable output
-- `--hls-prefer-native` and `--format-sort +proto:dash` to prefer DASH over HLS for YouTube (HLS+HLS merging to stdout fails)
-- Server-side yt-dlp + ffmpeg with retry + user-agent rotation
-
-### Security
-- URL validation (HTTP/HTTPS only)
-- Rate limiting: 30 req/min per IP
-- Server-side yt-dlp processing
-- HD quality gated server-side (403 if not premium)
+- Free users: server-side `/stream` (yt-dlp + ffmpeg merge + watermark)
+- Premium users: direct CDN URL (`/direct` endpoint) — fastest path
+- Pre-resolves CDN URL in background after video info loads (premium only)
+- `--concurrent-fragments 4`, `--buffer-size 16K` on all yt-dlp calls
+- Fragmented mp4 (fMP4) output for streaming to stdout
 
 ## API Endpoints
 
-- `POST /api/video/preview` — Quick metadata fetch (title, thumbnail, duration, uploader)
+- `POST /api/video/preview` — Quick metadata (title, thumbnail, duration)
 - `POST /api/video/info` — Full format listing with quality options
-- `GET /api/video/play` — Stream pre-muxed video for in-app playback
-- `GET /api/video/stream` — Download endpoint (free: ≤720p, premium: ≤4K)
-- `GET /api/video/update` — Trigger yt-dlp self-update
-- `GET /api/video/status` — Server health + yt-dlp version
-- `POST /api/video/test` — Internal test engine: batch-tests URLs for metadata, formats, download availability; returns structured results with timing, retry count, and logs
-
-## Test Mode (Internal Validation System)
-
-Located in `artifacts/reelvault/app/(tabs)/testmode.tsx`.
-
-### Features
-- Predefined test suite covering: Short-form, Long-form, Direct Video, Invalid URLs, and Unsupported URLs
-- Live test runner with batch processing (3 URLs at a time) for real-time feedback
-- Per-test checklist: metadata loaded, thumbnail available, duration found, formats count, downloadable
-- Performance tracking per test: metadata fetch time, format check time, total time
-- Auto-retry with fallback handler on first failure
-- Success rate tracker (passed/failed/unsupported/invalid + %)
-- Retry Failed button to re-run only failed tests
-- Add custom URLs to the test suite at runtime
-- Live log panel (newest-first, color-coded by severity)
-- Reset to default test suite button
-
-### Test Endpoint (`POST /api/video/test`)
-- Accepts up to 20 URLs with category labels
-- Validates URL format before attempting extraction
-- Retries with fallback handler on first yt-dlp failure
-- Returns per-URL: status, errorCode, errorMessage, title, thumbnail, hasDuration, formatsAvailable, downloadable, retryAttempts, metadataMs, formatMs, totalMs
-- Returns summary: total, passed, failed, unsupported, invalid, successRate, totalMs
-- Returns server-side logs array
-
-## Error Codes
-
-| Code | Meaning |
-|------|---------|
-| `INVALID_URL` | Not a valid HTTP/HTTPS URL |
-| `UNSUPPORTED_URL` | Site not supported by yt-dlp |
-| `PRIVATE_VIDEO` | Video is private or removed |
-| `GEO_BLOCKED` | Geo-restricted content |
-| `FORMAT_UNAVAILABLE` | Requested format not available |
-| `PREMIUM_REQUIRED` | HD format requires premium |
-| `SERVICE_UNAVAILABLE` | yt-dlp failed (auth required, etc.) |
-| `RATE_LIMIT` | Too many requests (30/min) |
+- `GET /api/video/stream` — Download + watermark for free users
+- `GET /api/video/direct` — Resolve CDN URL for premium users
+- `GET /api/video/pipe` — Proxy CDN → client (web only)
+- `GET /api/video/trim` — Server-side trim with ffmpeg
+- `GET /api/health` — Health check
 
 ## Theme
 
-- Dark theme: background `#0A0A0F`, accent `#3B82F6` (electric blue), gold `#F59E0B`
+- Dark: background `#0A0A0F`, accent `#3B82F6` (blue), gold `#F59E0B`
 - Font: Inter (400, 500, 600, 700)
 
 ## Storage Keys (AsyncStorage)
 
-- `@reelvault:premium` — premium status
-- `@reelvault:history` — download history
+- `@reelvault:premium_expiry` — premium expiry timestamp
+- `@reelvault:history` — download history (array, max 100)
 
-## Running
+## Building APK
 
 ```bash
-# Start API server
-pnpm --filter @workspace/api-server run dev
+cd artifacts/reelvault
+eas login           # login with Expo account
+eas build --profile preview --platform android
+# Download APK from EAS dashboard: https://expo.dev
+```
 
-# Start Expo app
+EAS preview profile builds a direct APK (not AAB) for sideloading.
+
+## Running Dev
+
+```bash
+pnpm --filter @workspace/api-server run dev
 pnpm --filter @workspace/reelvault run dev
 ```
 
-## Dependencies (Fixed)
+## Bug Fixes Applied (latest)
 
-- `expo-build-properties`: `~1.0.10` (correct for Expo SDK 54; was incorrectly `^55.0.10`)
-- `react-native-keyboard-controller`: `1.18.5` (pinned to Expo SDK 54 expected version)
-- `expo-media-library`: `~18.2.1` (added for gallery/album saving on Android)
-- `expo-file-system`: imported from `expo-file-system/legacy` to use stable DownloadResumable API
-
-## Gallery Saving
-
-After each successful native download (index.tsx, trim.tsx), the file is saved to the device gallery via `expo-media-library`:
-- Videos → "LinkB Downloads" album
-- Audio → "LinkB Audio" album
-- Permission is requested at download time (`MediaLibrary.requestPermissionsAsync`)
+1. **Interstitial ads for premium users** — Fixed. Ads now only show for free users.
+2. **Trim screen: premium users forced to watch ad** — Fixed. Premium users access trim directly.
+3. **Trim unlock flow broken** — Fixed. Watching ad in Download tab now calls `unlockPremiumOnce()` before navigating to trim, so user actually gets access.
+4. **Trim locked screen missing ad option** — Fixed. Added "Watch Ad to Unlock for 24h" button on trim locked screen.
+5. **Version mismatch** — Fixed. Premium screen now shows 1.0.1 matching app.json.
 
 ## Known Limitations
 
 - Reddit: requires account cookies (SERVICE_UNAVAILABLE expected)
-- Vimeo: OAuth token issues in server environments (platform limitation)
+- Vimeo: OAuth token issues in server environments
 - Instagram/TikTok: auth-gated content requires cookies
+- iOS builds not configured (Android-only app)
