@@ -28,3 +28,8 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["yt-dlp", "eas-cli"]
+
+[userenv]
+
+[userenv.shared]
+EXPO_TOKEN = "K8XPKdlGJwvF68wXcG1T1dyQk1dGn0BJGM10hDsB"
