@@ -183,7 +183,7 @@ export function useVideoApi() {
       });
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30_000);
+      const timeoutId = setTimeout(() => controller.abort(), 15_000);
 
       const res = await fetch(`${BASE_URL}/api/video/direct?${params.toString()}`, {
         signal: controller.signal,

@@ -12,7 +12,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FullScreenAdModal } from "@/components/FullScreenAdModal";
 import {
   showRewardedAd as showRewardedAdUnified,
-  showInterstitialAd as showInterstitialAdUnified,
 } from "@/utils/adSystem";
 import {
   ActivityIndicator,
@@ -135,6 +134,7 @@ export default function DownloadScreen() {
   const downloadCountRef = useRef(0);
   const [adLoading, setAdLoading] = useState(false);
   const adUnlockedForHDRef = useRef(false);
+  const fromShareRef = useRef(false);
 
   // Keep stable refs to the latest handlers so effects/callbacks with empty
   // deps always call the current version (avoids stale-closure bugs).
@@ -278,9 +278,13 @@ export default function DownloadScreen() {
 
     const handleIncomingUrl = (rawUrl: string | null) => {
       if (!rawUrl) return;
+      // Skip pure deep link scheme without any content
+      if (rawUrl === "linkbdownloader://" || rawUrl === "linkbdownloader://open") return;
+
       // Direct URL shared (e.g. YouTube link via share sheet or VIEW intent)
       const directUrl = extractUrl(rawUrl);
       if (directUrl) {
+        fromShareRef.current = true;
         handleUrlChangeRef.current?.(directUrl);
         return;
       }
@@ -290,6 +294,7 @@ export default function DownloadScreen() {
         const decoded = (() => { try { return decodeURIComponent(rawUrl); } catch { return rawUrl; } })();
         const decodedExtract = extractUrl(decoded);
         if (decodedExtract) {
+          fromShareRef.current = true;
           handleUrlChangeRef.current?.(decodedExtract);
           return;
         }
@@ -309,6 +314,7 @@ export default function DownloadScreen() {
           if (candidate) {
             const extracted = extractUrl(candidate);
             if (extracted) {
+              fromShareRef.current = true;
               handleUrlChangeRef.current?.(extracted);
               return;
             }
@@ -317,14 +323,17 @@ export default function DownloadScreen() {
       } catch {}
     };
 
-    // Cold start — app was opened via intent. Retry after delay for Android share intent.
+    // Cold start — app was opened via intent. Retry multiple times for Android share intent.
     Linking.getInitialURL().then((u) => {
       handleIncomingUrl(u);
-      // Android sometimes delivers the intent URL slightly late — retry after 800ms
       if (!u) {
+        // Android sometimes delivers the intent URL slightly late — retry a few times
         setTimeout(() => {
           Linking.getInitialURL().then(handleIncomingUrl).catch(() => {});
-        }, 800);
+        }, 500);
+        setTimeout(() => {
+          Linking.getInitialURL().then(handleIncomingUrl).catch(() => {});
+        }, 1500);
       }
     }).catch(() => {});
 
@@ -434,6 +443,12 @@ export default function DownloadScreen() {
       consumeAdReward();
     }
 
+    // Show interstitial BEFORE the 3rd download (and every 3rd after that)
+    // Free users get 2 free downloads, then see an ad before every 3rd
+    if (!isPremium && !adUnlockedForHDRef.current && downloadCountRef.current > 0 && downloadCountRef.current % 3 === 2) {
+      await showAdModal("interstitial");
+    }
+
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     const ext = quality.isAudioOnly ? "mp3" : "mp4";
@@ -518,9 +533,6 @@ export default function DownloadScreen() {
           isAudio: quality.isAudioOnly,
         });
         downloadCountRef.current += 1;
-        if (!isPremium && downloadCountRef.current % 3 === 0) {
-          setTimeout(() => showInterstitialAdUnified(() => showAdModal("interstitial")), 800);
-        }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
           Alert.alert("Download failed", "Could not download the video. Please try again.");
@@ -635,9 +647,6 @@ export default function DownloadScreen() {
           isAudio: quality.isAudioOnly,
         });
         downloadCountRef.current += 1;
-        if (!isPremium && downloadCountRef.current % 3 === 0) {
-          setTimeout(() => showInterstitialAdUnified(() => showAdModal("interstitial")), 800);
-        }
       } catch (e: any) {
         if (!String(e).includes("cancel")) {
           // Fallback: stream via server
@@ -675,9 +684,6 @@ export default function DownloadScreen() {
               isAudio: quality.isAudioOnly,
             });
             downloadCountRef.current += 1;
-            if (!isPremium && downloadCountRef.current % 3 === 0) {
-              setTimeout(() => showInterstitialAdUnified(() => showAdModal("interstitial")), 800);
-            }
           } catch {
             setDownloadPhase("");
           }
@@ -911,7 +917,7 @@ export default function DownloadScreen() {
         <View style={styles.headerLeft}>
           <LinkBLogo size={40} />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.appName} numberOfLines={1} adjustsFontSizeToFit>LinkB Downloader</Text>
+            <Text style={styles.appName} numberOfLines={1}>LinkB Downloader</Text>
             <Text style={styles.tagline} numberOfLines={1}>Download any video, anywhere</Text>
           </View>
         </View>
@@ -1329,7 +1335,7 @@ export default function DownloadScreen() {
       {/* Footer branding + banner ad — always visible at very bottom for free users */}
       {!isPremium && (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 49 }]}>
-          <AdBanner />
+          <AdBanner onPremiumPress={() => setShowPremiumModal(true)} />
           <Text style={styles.footerCredit}>by @baddalmeher</Text>
         </View>
       )}
