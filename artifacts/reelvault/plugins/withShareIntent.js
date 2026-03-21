@@ -40,8 +40,7 @@ module.exports = function withShareIntent(config) {
 
       // 2. The helper method + onNewIntent override
       const helperMethod = `
-  private fun handleShareIntent(intent: Intent?) {
-    intent ?: return
+  private fun handleShareIntent(intent: Intent) {
     if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
       val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
       val urlRegex = Regex("""https?://[^\\s]+""")
@@ -53,9 +52,9 @@ module.exports = function withShareIntent(config) {
     }
   }
 
-  override fun onNewIntent(intent: Intent?) {
-    handleShareIntent(intent)
+  override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
+    handleShareIntent(intent)
   }
 `;
 
@@ -68,7 +67,7 @@ module.exports = function withShareIntent(config) {
       // 4. Call handleShareIntent at the start of onCreate
       contents = contents.replace(
         /override fun onCreate\(savedInstanceState: Bundle\?\)\s*\{/,
-        `override fun onCreate(savedInstanceState: Bundle?) {\n    handleShareIntent(intent)`
+        `override fun onCreate(savedInstanceState: Bundle?) {\n    intent?.let { handleShareIntent(it) }`
       );
     } else {
       // Java path
