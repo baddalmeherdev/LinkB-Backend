@@ -161,14 +161,10 @@ export default function DownloadScreen() {
     resolve?.(earned);
   }, []);
 
-  // Pre-resolved CDN URL cache — populated in background after video info loads.
+  // Pre-resolved CDN URL cache — keyed by formatId for instant download of any quality.
   // CDN URLs expire ~5 min; we conservatively cache for 4 min.
-  const preResolvedRef = useRef<{
-    formatId: string;
-    directUrl: string;
-    filename: string;
-    expires: number;
-  } | null>(null);
+  type PreResolvedEntry = { directUrl: string; filename: string; expires: number };
+  const preResolvedRef = useRef<Map<string, PreResolvedEntry>>(new Map());
 
   // Save a downloaded file to the device gallery (media library).
   // Silently no-ops on web or if permission is denied.
@@ -233,19 +229,22 @@ export default function DownloadScreen() {
         if (info) {
           setVideoInfo(info);
           setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
-          // Pre-resolve CDN URL in background for all users — enables 2-4s fast download
-          preResolvedRef.current = null;
-          const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
-            ?? info.qualities.find((q) => !q.isAudioOnly);
-          if (bestQ) {
-            getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((res) => {
+          // Pre-resolve CDN URLs in background — top 2 qualities in parallel
+          // so ANY quality the user picks is already cached → near-instant download start
+          preResolvedRef.current.clear();
+          const preResolveQueue = [
+            info.qualities.find((q) => !q.isAudioOnly && !q.isHD),
+            info.qualities.find((q) => !q.isAudioOnly),
+          ].filter(Boolean).filter((q, i, arr) => arr.findIndex(x => x!.formatId === q!.formatId) === i).slice(0, 2);
+          for (const q of preResolveQueue) {
+            if (!q) continue;
+            getDirectDownloadUrl(trimmed, q, info.title, isPremium).then((res) => {
               if (res) {
-                preResolvedRef.current = {
-                  formatId: bestQ.formatId,
+                preResolvedRef.current.set(q.formatId, {
                   directUrl: res.directUrl,
                   filename: res.filename,
                   expires: Date.now() + 4 * 60 * 1000,
-                };
+                });
               }
             }).catch(() => {});
           }
@@ -378,19 +377,21 @@ export default function DownloadScreen() {
     if (info) {
       setVideoInfo(info);
       setTimeout(() => scrollRef.current?.scrollTo({ y: 280, animated: true }), 200);
-      preResolvedRef.current = null;
-      // Pre-resolve CDN URL in background for all users — enables 2-4s fast download
-      const bestQ = info.qualities.find((q) => !q.isAudioOnly && !q.isHD)
-        ?? info.qualities.find((q) => !q.isAudioOnly);
-      if (bestQ) {
-        getDirectDownloadUrl(trimmed, bestQ, info.title, isPremium).then((r) => {
+      preResolvedRef.current.clear();
+      // Pre-resolve top qualities in parallel for instant download start
+      const preResolveQueue2 = [
+        info.qualities.find((q) => !q.isAudioOnly && !q.isHD),
+        info.qualities.find((q) => !q.isAudioOnly),
+      ].filter(Boolean).filter((q, i, arr) => arr.findIndex(x => x!.formatId === q!.formatId) === i).slice(0, 2);
+      for (const q of preResolveQueue2) {
+        if (!q) continue;
+        getDirectDownloadUrl(trimmed, q, info.title, isPremium).then((r) => {
           if (r) {
-            preResolvedRef.current = {
-              formatId: bestQ.formatId,
+            preResolvedRef.current.set(q.formatId, {
               directUrl: r.directUrl,
               filename: r.filename,
               expires: Date.now() + 4 * 60 * 1000,
-            };
+            });
           }
         }).catch(() => {});
       }
@@ -453,13 +454,10 @@ export default function DownloadScreen() {
 
         // Use pre-resolved CDN URL if we have a fresh cache for this quality.
         // This skips yt-dlp entirely → pipe starts instantly instead of 3-8s wait.
-        const cached = preResolvedRef.current;
-        const cachedUrl =
-          cached &&
-          cached.formatId === quality.formatId &&
-          cached.expires > Date.now()
-            ? cached.directUrl
-            : undefined;
+        const cachedEntry = preResolvedRef.current.get(quality.formatId);
+        const cachedUrl = cachedEntry && cachedEntry.expires > Date.now()
+          ? cachedEntry.directUrl
+          : undefined;
 
         const pipeUrl = getPipeUrl(
           videoInfo.originalUrl, quality, videoInfo.title, isPremium, cachedUrl
@@ -540,11 +538,15 @@ export default function DownloadScreen() {
         let downloadUrl: string;
         let filename: string;
 
+        const getCachedDirect = (fmtId: string) => {
+          const e = preResolvedRef.current.get(fmtId);
+          return e && e.expires > Date.now() ? e : null;
+        };
+
         if (isPremium) {
-          const cached = preResolvedRef.current;
           let direct: { directUrl: string; filename: string } | null =
-            cached && cached.formatId === quality.formatId && cached.expires > Date.now()
-              ? { directUrl: cached.directUrl, filename: cached.filename }
+            getCachedDirect(quality.formatId)
+              ? { directUrl: getCachedDirect(quality.formatId)!.directUrl, filename: getCachedDirect(quality.formatId)!.filename }
               : null;
 
           if (!direct) {
@@ -558,10 +560,10 @@ export default function DownloadScreen() {
           filename = direct?.filename ?? fallbackFilename;
         } else {
           // Free users: use pre-resolved CDN URL if available, else resolve now, then fall back to stream
-          const cached = preResolvedRef.current;
-          if (cached && cached.formatId === quality.formatId && cached.expires > Date.now()) {
-            downloadUrl = cached.directUrl;
-            filename = cached.filename;
+          const cachedE = getCachedDirect(quality.formatId);
+          if (cachedE) {
+            downloadUrl = cachedE.directUrl;
+            filename = cachedE.filename;
           } else {
             const directResult = await getDirectDownloadUrl(
               videoInfo.originalUrl, quality, videoInfo.title, isPremium
