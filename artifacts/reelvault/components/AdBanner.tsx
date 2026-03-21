@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Dimensions, Platform, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
@@ -58,7 +58,7 @@ const bannerHtml = `<!DOCTYPE html>
           for (var k in attrs) { s.setAttribute(k, attrs[k]); }
           s.onload = function() { loaded = true; };
           s.onerror = function() {
-            if (retries < 2) setTimeout(function() { tryLoadScript(src, attrs, retries + 1); }, 1500);
+            if (retries < 3) setTimeout(function() { tryLoadScript(src, attrs, retries + 1); }, 2000);
           };
           document.head.appendChild(s);
         } catch(e) {}
@@ -78,13 +78,25 @@ const bannerHtml = `<!DOCTYPE html>
           tryLoadScript('https://cdn.startappws.com/loader.js', attrs, 0);
         }
       }, 2000);
+
+      setTimeout(function() {
+        if (!loaded) {
+          tryLoadScript('https://d2ywez57ub2gfd.cloudfront.net/sdk/startio.js', attrs, 0);
+        }
+      }, 4000);
     })();
   </script>
 </body>
 </html>`;
 
 export function AdBanner() {
-  const [loaded, setLoaded] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Always show the WebView after 1.5s to give the ad a chance to load
+    const timer = setTimeout(() => setVisible(true), 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (Platform.OS === "web") return null;
 
@@ -93,7 +105,7 @@ export function AdBanner() {
       <View style={[styles.bannerWrap, { width: BANNER_WIDTH }]}>
         <WebView
           source={{ html: bannerHtml }}
-          style={[styles.webview, { width: BANNER_WIDTH, opacity: loaded ? 1 : 0 }]}
+          style={[styles.webview, { width: BANNER_WIDTH, opacity: visible ? 1 : 0 }]}
           userAgent={MOBILE_UA}
           scrollEnabled={false}
           originWhitelist={["*"]}
@@ -105,9 +117,6 @@ export function AdBanner() {
           mediaPlaybackRequiresUserAction={false}
           allowsFullscreenVideo={false}
           startInLoadingState={false}
-          onLoad={() => setLoaded(true)}
-          onError={() => setLoaded(true)}
-          onHttpError={() => setLoaded(true)}
           onShouldStartLoadWithRequest={() => true}
           allowsLinkPreview={false}
           geolocationEnabled={false}

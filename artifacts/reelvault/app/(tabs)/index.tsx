@@ -264,19 +264,7 @@ export default function DownloadScreen() {
   }, []);
 
 
-  // Show interstitial ad on app launch (3s delay so UI is ready)
-  useEffect(() => {
-    if (Platform.OS !== "web") {
-      const timer = setTimeout(() => {
-        showInterstitialAdUnified(() => {
-          setAdModalMode("interstitial");
-          setAdModalVisible(true);
-          adResolveRef.current = () => {};
-        });
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  // (Launch interstitial removed — ads shown after downloads only)
 
   // Handle URLs shared to the app via Android intent (ACTION_SEND / ACTION_VIEW / deep links)
   useEffect(() => {
@@ -299,8 +287,17 @@ export default function DownloadScreen() {
       }
       // Deep-link URL may carry the target as a query param (linkbdownloader://...)
       try {
+        // Also try extracting from URL-decoded version of the raw URL
+        const decoded = (() => { try { return decodeURIComponent(rawUrl); } catch { return rawUrl; } })();
+        const decodedExtract = extractUrl(decoded);
+        if (decodedExtract) {
+          handleUrlChangeRef.current?.(decodedExtract);
+          return;
+        }
+
         const parsed = new URL(rawUrl);
         const candidates = [
+          parsed.searchParams.get("autoUrl"),
           parsed.searchParams.get("url"),
           parsed.searchParams.get("text"),
           parsed.searchParams.get("shareText"),
@@ -308,9 +305,6 @@ export default function DownloadScreen() {
           parsed.searchParams.get("q"),
           parsed.searchParams.get("link"),
         ];
-        // Also try to extract URL from the full rawUrl string
-        const fullExtract = extractUrl(rawUrl);
-        if (fullExtract) candidates.push(fullExtract);
 
         for (const candidate of candidates) {
           if (candidate) {
@@ -1531,11 +1525,12 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 6,
     backgroundColor: C.surfaceElevated, paddingHorizontal: 14, paddingVertical: 12,
     borderRadius: 12, borderWidth: 1, borderColor: C.surfaceBorder,
+    flexShrink: 0,
   },
-  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium" },
+  pasteBtnText: { color: C.textSecondary, fontSize: 13, fontFamily: "Inter_500Medium", flexShrink: 0 },
   fetchBtn: {
     flex: 1, flexDirection: "row", alignItems: "center",
-    justifyContent: "center", gap: 8, overflow: "hidden",
+    justifyContent: "center", gap: 8,
     backgroundColor: C.accent, paddingVertical: 13, borderRadius: 12,
     paddingHorizontal: 16,
   },
@@ -1705,8 +1700,9 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 7,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
+    flexShrink: 0,
   },
-  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium" },
+  featureChipText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_500Medium", flexShrink: 0 },
   supportedPlatforms: {
     width: "100%",
     flexDirection: "row", gap: 8, marginTop: 4, flexWrap: "wrap",
@@ -1716,9 +1712,10 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: C.surfaceElevated, paddingLeft: 10, paddingRight: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1, borderColor: C.surfaceBorder,
+    flexShrink: 0,
   },
   platformDot: { width: 6, height: 6, borderRadius: 3 },
-  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  platformPillText: { color: C.textSecondary, fontSize: 11, fontFamily: "Inter_600SemiBold", flexShrink: 0 },
   disclaimerBox: {
     flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 16,
     backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 10,
